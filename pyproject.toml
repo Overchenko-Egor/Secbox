@@ -7,7 +7,10 @@ name = "secbox"
 version = "0.1.0"
 description = "Modular security gateway and infrastructure protection platform"
 requires-python = ">=3.11"
-dependencies = []
+dependencies = [
+    "pydantic>=2.10,<3",
+    "PyYAML>=6.0,<7",
+]
 
 [project.optional-dependencies]
 dev = [
@@ -15,6 +18,7 @@ dev = [
     "pytest-cov",
     "ruff",
     "mypy",
+    "types-PyYAML",
 ]
 
 [tool.setuptools.packages.find]
