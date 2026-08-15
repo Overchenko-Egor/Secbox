@@ -48,7 +48,22 @@ from secbox.modules.dhcp.executor import (
     DhcpApplyError,
     apply_dnsmasq_config,
 )
-
+from secbox.modules.firewall.renderer import (
+    FirewallRenderError,
+    render_nftables_config,
+)
+from secbox.modules.firewall.validator import (
+    FirewallPreflightError,
+    validate_firewall_preflight,
+)
+from secbox.modules.firewall.executor import (
+    FirewallApplyError,
+    apply_firewall_config,
+)
+from secbox.modules.firewall.sysctl import (
+    ForwardingError,
+    set_ipv4_forwarding,
+)
 
 
 
@@ -77,6 +92,13 @@ dhcp_app = typer.Typer(
     no_args_is_help=True,
 )
 
+firewall_app = typer.Typer(
+    name="firewall",
+    help="Manage SecBox firewall configuration.",
+    no_args_is_help=True,
+)
+
+app.add_typer(firewall_app, name="firewall")
 app.add_typer(network_app, name="network")
 app.add_typer(config_app, name="config")
 app.add_typer(dhcp_app, name="dhcp")
@@ -516,4 +538,91 @@ def dhcp_apply() -> None:
 
     console.print(
         "[green]DHCP configuration applied successfully.[/green]"
+    )
+
+@firewall_app.command("render")
+def firewall_render(
+    output_path: Path = typer.Option(
+        Path("/tmp/secbox-firewall.nft"),
+        "--output",
+        "-o",
+    ),
+) -> None:
+    """Render nftables ruleset without applying it."""
+
+    store = _store()
+
+    try:
+        config = store.load()
+
+        if config.firewall is None:
+            _fail("firewall configuration is not defined")
+
+        validate_firewall_preflight(
+            config.firewall,
+            config.network,
+        )
+
+        rendered = render_nftables_config(
+            config.firewall,
+            output_path,
+        )
+
+    except (
+        ConfigStoreError,
+        FirewallPreflightError,
+        FirewallRenderError,
+        OSError,
+    ) as error:
+        _fail(str(error))
+
+    console.print(
+        f"[green]Rendered firewall configuration:[/green] {rendered}"
+    )
+
+@firewall_app.command("apply")
+def firewall_apply() -> None:
+    """Render and apply SecBox firewall configuration."""
+
+    store = _store()
+
+    rendered_file = Path("/run/secbox/secbox-firewall.nft")
+
+    try:
+        config = store.load()
+
+        if config.firewall is None:
+            _fail("firewall configuration is not defined")
+
+        validate_firewall_preflight(
+            config.firewall,
+            config.network,
+        )
+
+        render_nftables_config(
+            config.firewall,
+            rendered_file,
+        )
+
+        apply_firewall_config(
+            rendered_file=rendered_file,
+            target_file=Path("/etc/secbox/nftables.conf"),
+            backup_file=Path("/var/lib/secbox/firewall/nftables.conf.bak"),
+        )
+        set_ipv4_forwarding(
+            config.firewall.enable_ipv4_forwarding
+        )
+
+    except (
+        ConfigStoreError,
+        FirewallPreflightError,
+        FirewallRenderError,
+        FirewallApplyError,
+        OSError,
+        ForwardingError,
+    ) as error:
+        _fail(str(error))
+
+    console.print(
+        "[green]Firewall configuration applied successfully.[/green]"
     )
