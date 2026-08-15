@@ -18,6 +18,11 @@ from secbox.core.config_store import (
 from secbox.core.models import SystemConfig
 from secbox.core.paths import get_config_path
 from secbox.core.version import __version__
+from secbox.modules.network.discovery import (
+    NetworkDiscoveryError,
+    discover_manageable_interfaces,
+)
+
 
 app = typer.Typer(
     name="secboxctl",
@@ -248,3 +253,33 @@ def network_load(
     console.print(
         f"[green]Network configuration imported:[/green] {path}"
     )
+
+@network_app.command("interfaces")
+def network_interfaces() -> None:
+    """Display detected network interfaces."""
+
+    try:
+        interfaces = discover_manageable_interfaces()
+    except NetworkDiscoveryError as error:
+        _fail(str(error))
+
+    if not interfaces:
+        console.print("No manageable network interfaces found.")
+        return
+
+    for interface in interfaces:
+        console.print(f"[bold]{interface.name}[/bold]")
+        console.print(f"  MAC:       {interface.mac or '-'}")
+        console.print(f"  State:     {interface.operstate}")
+        console.print(f"  MTU:       {interface.mtu}")
+
+        if interface.addresses:
+            console.print("  Addresses:")
+
+            for address in interface.addresses:
+                console.print(
+                    f"    {address.family}: "
+                    f"{address.address}/{address.prefixlen}"
+                )
+        else:
+            console.print("  Addresses: -")
