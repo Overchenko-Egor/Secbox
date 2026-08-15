@@ -106,15 +106,15 @@ def test_filenames_are_deterministic(tmp_path: Path) -> None:
     config = NetworkConfig(
         interfaces=[
             NetworkInterfaceConfig(
-                name="ens33",
-                role="wan",
-                ipv4_method="dhcp",
-            ),
-            NetworkInterfaceConfig(
                 name="ens36",
                 role="lan",
                 ipv4_method="static",
                 ipv4_address="192.168.50.1/24",
+            ),
+            NetworkInterfaceConfig(
+                name="ens33",
+                role="wan",
+                ipv4_method="dhcp",
             ),
         ]
     )
@@ -125,4 +125,4 @@ def test_filenames_are_deterministic(tmp_path: Path) -> None:
     )
 
     assert files[0].name == "10-secbox-ens33.network"
-    assert files[1].name == "11-secbox-ens36.network"
+    assert files[1].name == "10-secbox-ens36.network"

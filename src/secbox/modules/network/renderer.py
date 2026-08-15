@@ -32,11 +32,11 @@ def render_networkd(
 
     rendered_files: list[Path] = []
 
-    for index, interface in enumerate(config.interfaces, start=10):
-        rendered_file = output_dir / _network_filename(
-            index,
-            interface,
-        )
+    for interface in sorted(
+        config.interfaces,
+        key=lambda item: item.name,
+    ):
+        rendered_file = output_dir / _network_filename(interface)
 
         rendered_file.write_text(
             _render_interface(interface),
@@ -49,13 +49,11 @@ def render_networkd(
 
 
 def _network_filename(
-    index: int,
     interface: NetworkInterfaceConfig,
 ) -> str:
     """Generate deterministic systemd-networkd filename."""
 
-    return f"{index:02d}-secbox-{interface.name}.network"
-
+    return f"10-secbox-{interface.name}.network"
 
 def _render_interface(
     interface: NetworkInterfaceConfig,
