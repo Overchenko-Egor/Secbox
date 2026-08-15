@@ -23,6 +23,14 @@ from secbox.modules.network.discovery import (
     discover_manageable_interfaces,
 )
 
+from secbox.modules.network.validator import (
+    NetworkPreflightError,
+    validate_management_interface,
+    validate_network_preflight,
+)
+
+
+
 
 app = typer.Typer(
     name="secboxctl",
@@ -283,3 +291,34 @@ def network_interfaces() -> None:
                 )
         else:
             console.print("  Addresses: -")
+
+@network_app.command("check")
+def network_check() -> None:
+    """Validate network configuration against the current system."""
+
+    store = _store()
+
+    try:
+        config = store.load()
+        runtime_interfaces = discover_manageable_interfaces()
+
+        validate_network_preflight(
+            config.network,
+            runtime_interfaces,
+        )
+
+        validate_management_interface(
+            config.network,
+            runtime_interfaces,
+        )
+
+    except (
+        ConfigStoreError,
+        NetworkDiscoveryError,
+        NetworkPreflightError,
+    ) as error:
+        _fail(str(error))
+
+    console.print(
+        "[green]Network configuration passed preflight checks.[/green]"
+    )
