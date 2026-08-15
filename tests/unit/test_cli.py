@@ -91,3 +91,45 @@ def test_validate_invalid_config(
 
     assert result.exit_code == 1
     assert "configuration validation failed" in result.stderr
+
+
+
+
+
+
+def test_network_load_and_show(
+    monkeypatch: MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    config_path = tmp_path / "secbox.yml"
+    network_path = tmp_path / "network.yml"
+
+    set_test_config_path(monkeypatch, config_path)
+
+    network_path.write_text(
+        """
+interfaces:
+  - name: ens33
+    role: wan
+    ipv4_method: dhcp
+
+  - name: ens34
+    role: lan
+    ipv4_method: static
+    ipv4_address: 192.168.50.1/24
+""".strip(),
+        encoding="utf-8",
+    )
+
+    runner.invoke(app, ["config", "init"])
+    load_result = runner.invoke(
+        app,
+        ["network", "load", str(network_path)],
+    )
+    show_result = runner.invoke(app, ["network", "show"])
+
+    assert load_result.exit_code == 0
+    assert show_result.exit_code == 0
+    assert "name: ens33" in show_result.stdout
+    assert "role: wan" in show_result.stdout
+    assert "address: 192.168.50.1/24" in show_result.stdout

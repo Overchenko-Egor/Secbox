@@ -73,3 +73,34 @@ def test_rollback_without_backup_raises_error(tmp_path: Path) -> None:
 
     with pytest.raises(ConfigBackupNotFoundError):
         store.rollback()
+
+def test_load_network_configuration(tmp_path: Path) -> None:
+    config_path = tmp_path / "secbox.yml"
+
+    config_path.write_text(
+        """
+schema_version: 1
+
+system:
+  hostname: secbox
+
+network:
+  interfaces:
+    - name: ens33
+      role: wan
+      ipv4_method: dhcp
+
+    - name: ens36
+      role: lan
+      ipv4_method: static
+      ipv4_address: 192.168.50.1/24
+""".strip(),
+        encoding="utf-8",
+    )
+
+    store = ConfigStore(config_path)
+    config = store.load()
+
+    assert len(config.network.interfaces) == 2
+    assert config.network.interfaces[0].role == "wan"
+    assert str(config.network.interfaces[1].ipv4_address) == "192.168.50.1/24"

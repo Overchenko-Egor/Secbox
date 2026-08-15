@@ -4,6 +4,8 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
+from secbox.modules.network.models import NetworkConfig
+
 
 class SystemConfig(BaseModel):
     """General SecBox system settings."""
@@ -39,3 +41,4 @@ class SecBoxConfig(BaseModel):
 
     schema_version: Literal[1] = 1
     system: SystemConfig = Field(default_factory=SystemConfig)
+    network: NetworkConfig = Field(default_factory=NetworkConfig)

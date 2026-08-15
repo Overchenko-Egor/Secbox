@@ -1,10 +1,11 @@
 """Command-line interface for SecBox."""
 
 from pathlib import Path
-from typing import NoReturn
+from typing import NoReturn, Any
 
 import typer
 import yaml
+from secbox.modules.network.models import NetworkConfig
 from pydantic import ValidationError
 from rich.console import Console
 
@@ -30,6 +31,13 @@ config_app = typer.Typer(
     no_args_is_help=True,
 )
 
+network_app = typer.Typer(
+    name="network",
+    help="Manage SecBox network configuration.",
+    no_args_is_help=True,
+)
+
+app.add_typer(network_app, name="network")
 app.add_typer(config_app, name="config")
 
 console = Console()
@@ -177,4 +185,66 @@ def config_rollback() -> None:
             sort_keys=False,
             allow_unicode=True,
         ).rstrip()
+    )
+
+@network_app.command("show")
+def network_show() -> None:
+    """Display the validated network configuration."""
+    store = _store()
+
+    try:
+        config = store.load()
+    except ConfigStoreError as error:
+        _fail(str(error))
+
+    console.print(
+        yaml.safe_dump(
+            config.network.model_dump(mode="json"),
+            sort_keys=False,
+            allow_unicode=True,
+        ).rstrip()
+    )
+
+
+@network_app.command("load")
+def network_load(
+    path: Path = typer.Argument(
+        ...,
+        exists=True,
+        dir_okay=False,
+        readable=True,
+        resolve_path=True,
+        help="YAML file containing a network section or network model.",
+    ),
+) -> None:
+    """Validate and import a network configuration from YAML."""
+    store = _store()
+
+    try:
+        raw_data: Any = yaml.safe_load(path.read_text(encoding="utf-8"))
+    except (OSError, yaml.YAMLError) as error:
+        _fail(f"failed to read network configuration: {error}")
+
+    if not isinstance(raw_data, dict):
+        _fail("network configuration root must be a YAML mapping")
+
+    network_data = raw_data.get("network", raw_data)
+
+    if not isinstance(network_data, dict):
+        _fail("network section must be a YAML mapping")
+
+    try:
+        network_config = NetworkConfig.model_validate(network_data)
+        current_config = store.load()
+        updated_config = current_config.model_copy(
+            update={"network": network_config}
+        )
+        store.save(updated_config)
+    except ConfigNotFoundError:
+        _fail("configuration is not initialized; run 'secboxctl config init'")
+    except (ConfigStoreError, ValidationError) as error:
+        _fail(str(error))
+
+    console.print(
+        f"[green]Network configuration imported:[/green] {path}"
     )

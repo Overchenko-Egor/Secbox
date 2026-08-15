@@ -9,7 +9,7 @@ def test_default_config() -> None:
 
     assert config.schema_version == 1
     assert config.system.hostname == "secbox"
-
+    assert config.network.interfaces == []
 
 def test_hostname_is_normalized_to_lowercase() -> None:
     config = SystemConfig(hostname="SecBox-Gateway")
