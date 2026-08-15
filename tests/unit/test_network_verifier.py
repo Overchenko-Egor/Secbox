@@ -272,3 +272,69 @@ def test_default_route_on_wrong_interface_is_rejected() -> None:
                 )
             ],
         )
+
+def test_wan_default_route_in_configured_table_passes() -> None:
+    config = NetworkConfig(
+        interfaces=[
+            NetworkInterfaceConfig(
+                name="ens33",
+                role="wan",
+                ipv4_method="dhcp",
+                routing_table=100,
+            )
+        ]
+    )
+
+    verify_network_config(
+        config,
+        [
+            runtime_interface(
+                "ens33",
+                "192.168.1.63",
+            )
+        ],
+        [
+            NetworkRoute(
+                destination="default",
+                gateway="192.168.1.1",
+                interface="ens33",
+                source="192.168.1.63",
+                protocol="dhcp",
+                table=100,
+            )
+        ],
+    )
+
+def test_wan_route_in_wrong_table_is_rejected() -> None:
+    config = NetworkConfig(
+        interfaces=[
+            NetworkInterfaceConfig(
+                name="ens33",
+                role="wan",
+                ipv4_method="dhcp",
+                routing_table=100,
+            )
+        ]
+    )
+
+    with pytest.raises(
+        NetworkVerificationError,
+        match="table 100",
+    ):
+        verify_network_config(
+            config,
+            [
+                runtime_interface(
+                    "ens33",
+                    "192.168.1.63",
+                )
+            ],
+            [
+                NetworkRoute(
+                    destination="default",
+                    gateway="192.168.1.1",
+                    interface="ens33",
+                    table="main",
+                )
+            ],
+        )

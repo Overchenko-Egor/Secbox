@@ -169,7 +169,7 @@ def _verify_wan_route(
     interface: NetworkInterfaceConfig,
     routes: list[NetworkRoute],
 ) -> None:
-    """Require a default IPv4 route through an enabled WAN."""
+    """Require a default IPv4 route through the configured WAN table."""
 
     if interface.ipv4_method == "disabled":
         return
@@ -183,7 +183,20 @@ def _verify_wan_route(
         )
     ]
 
+    if interface.routing_table is not None:
+        default_routes = [
+            route
+            for route in default_routes
+            if route.table == interface.routing_table
+        ]
+
     if not default_routes:
+        if interface.routing_table is not None:
+            raise NetworkVerificationError(
+                f"WAN interface {interface.name} has no default IPv4 "
+                f"route in table {interface.routing_table}"
+            )
+
         raise NetworkVerificationError(
             f"WAN interface {interface.name} has no default IPv4 route"
         )

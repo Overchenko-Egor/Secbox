@@ -5,6 +5,7 @@ from pathlib import Path
 from secbox.modules.network.models import (
     NetworkConfig,
     NetworkInterfaceConfig,
+    RoutingPolicyConfig,
 )
 
 
@@ -39,7 +40,10 @@ def render_networkd(
         rendered_file = output_dir / _network_filename(interface)
 
         rendered_file.write_text(
-            _render_interface(interface),
+            _render_interface(
+                interface,
+                config.routing_policy,
+            ),
             encoding="utf-8",
         )
 
@@ -55,8 +59,10 @@ def _network_filename(
 
     return f"10-secbox-{interface.name}.network"
 
+
 def _render_interface(
     interface: NetworkInterfaceConfig,
+    routing_policies: list[RoutingPolicyConfig],
 ) -> str:
     """Render one interface into systemd-networkd syntax."""
 
@@ -74,6 +80,15 @@ def _render_interface(
                 "IPv6AcceptRA=no",
             ]
         )
+
+        if interface.routing_table is not None:
+            lines.extend(
+                [
+                    "",
+                    "[DHCPv4]",
+                    f"RouteTable={interface.routing_table}",
+                ]
+            )
 
     elif interface.ipv4_method == "static":
         if interface.ipv4_address is None:
@@ -101,6 +116,20 @@ def _render_interface(
     else:
         raise NetworkRenderError(
             f"unsupported IPv4 method: {interface.ipv4_method}"
+        )
+
+    for policy in routing_policies:
+        if policy.incoming_interface != interface.name:
+            continue
+
+        lines.extend(
+            [
+                "",
+                "[RoutingPolicyRule]",
+                f"IncomingInterface={policy.incoming_interface}",
+                f"Table={policy.table}",
+                f"Priority={policy.priority}",
+            ]
         )
 
     lines.append("")

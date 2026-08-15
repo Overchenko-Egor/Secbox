@@ -126,3 +126,52 @@ def test_filenames_are_deterministic(tmp_path: Path) -> None:
 
     assert files[0].name == "10-secbox-ens33.network"
     assert files[1].name == "10-secbox-ens36.network"
+
+def test_render_wan_routing_table(tmp_path: Path) -> None:
+    config = NetworkConfig(
+        interfaces=[
+            NetworkInterfaceConfig(
+                name="ens33",
+                role="wan",
+                ipv4_method="dhcp",
+                routing_table=100,
+            )
+        ]
+    )
+
+    files = render_networkd(config, tmp_path)
+
+    content = files[0].read_text(encoding="utf-8")
+
+    assert "[DHCPv4]" in content
+    assert "RouteTable=100" in content
+
+def test_render_routing_policy(tmp_path: Path) -> None:
+    from secbox.modules.network.models import RoutingPolicyConfig
+
+    config = NetworkConfig(
+        interfaces=[
+            NetworkInterfaceConfig(
+                name="ens36",
+                role="lan",
+                ipv4_method="static",
+                ipv4_address="192.168.50.1/24",
+            )
+        ],
+        routing_policy=[
+            RoutingPolicyConfig(
+                incoming_interface="ens36",
+                table=100,
+                priority=1000,
+            )
+        ],
+    )
+
+    files = render_networkd(config, tmp_path)
+
+    content = files[0].read_text(encoding="utf-8")
+
+    assert "[RoutingPolicyRule]" in content
+    assert "IncomingInterface=ens36" in content
+    assert "Table=100" in content
+    assert "Priority=1000" in content

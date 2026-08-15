@@ -16,6 +16,7 @@ def fake_route_output() -> str:
                 "protocol": "dhcp",
                 "prefsrc": "192.168.1.63",
                 "metric": 1024,
+                "table": "100",
             },
             {
                 "dst": "192.168.50.0/24",
@@ -58,7 +59,7 @@ def test_discover_ipv4_routes(
     assert default_route.gateway == "192.168.1.1"
     assert default_route.interface == "ens33"
     assert default_route.metric == 1024
-
+    assert default_route.table == 100
 
 def test_connected_route_is_discovered(
     monkeypatch: MonkeyPatch,

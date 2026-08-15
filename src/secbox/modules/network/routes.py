@@ -16,6 +16,7 @@ class NetworkRoute(BaseModel):
     source: str | None = None
     protocol: str | None = None
     metric: int | None = None
+    table: int | str | None = None
 
 
 class RouteDiscoveryError(Exception):
@@ -27,7 +28,15 @@ def discover_ipv4_routes() -> list[NetworkRoute]:
 
     try:
         result = subprocess.run(
-            ["ip", "-4", "-json", "route", "show"],
+            [
+                "ip",
+                "-4",
+                "-json",
+                "route",
+                "show",
+                "table",
+                "all",
+            ],
             check=True,
             capture_output=True,
             text=True,
@@ -57,14 +66,18 @@ def discover_ipv4_routes() -> list[NetworkRoute]:
 
         destination = raw_route.get("dst", "default")
 
-        if not isinstance(destination, str):
-            continue
-
         gateway = raw_route.get("gateway")
         interface = raw_route.get("dev")
         source = raw_route.get("prefsrc")
         protocol = raw_route.get("protocol")
         metric = raw_route.get("metric")
+        table = raw_route.get("table")
+
+        if isinstance(table, str) and table.isdigit():
+            table = int(table)
+
+        if not isinstance(destination, str):
+            continue
 
         routes.append(
             NetworkRoute(
@@ -74,6 +87,7 @@ def discover_ipv4_routes() -> list[NetworkRoute]:
                 source=source if isinstance(source, str) else None,
                 protocol=protocol if isinstance(protocol, str) else None,
                 metric=metric if isinstance(metric, int) else None,
+                table=table if isinstance(table, (int, str)) else None,
             )
         )
 
