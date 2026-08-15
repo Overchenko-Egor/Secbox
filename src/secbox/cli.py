@@ -36,7 +36,18 @@ from secbox.modules.network.executor import (
     NetworkApplyError,
     apply_networkd_config,
 )
-
+from secbox.modules.dhcp.renderer import (
+    DhcpRenderError,
+    render_dnsmasq_config,
+)
+from secbox.modules.dhcp.validator import (
+    DhcpPreflightError,
+    validate_dhcp_preflight,
+)
+from secbox.modules.dhcp.executor import (
+    DhcpApplyError,
+    apply_dnsmasq_config,
+)
 
 
 
@@ -60,8 +71,15 @@ network_app = typer.Typer(
     no_args_is_help=True,
 )
 
+dhcp_app = typer.Typer(
+    name="dhcp",
+    help="Manage SecBox DHCP configuration.",
+    no_args_is_help=True,
+)
+
 app.add_typer(network_app, name="network")
 app.add_typer(config_app, name="config")
+app.add_typer(dhcp_app, name="dhcp")
 
 console = Console()
 error_console = Console(stderr=True)
@@ -420,4 +438,82 @@ def network_apply() -> None:
 
     console.print(
         "[green]Network configuration applied successfully.[/green]"
+    )
+
+
+@dhcp_app.command("render")
+def dhcp_render(
+    output_path: Path = typer.Option(
+        Path("/tmp/secbox-dhcp.conf"),
+        "--output",
+        "-o",
+    ),
+) -> None:
+    """Render dnsmasq DHCP configuration without applying it."""
+
+    store = _store()
+
+    try:
+        config = store.load()
+
+        validate_dhcp_preflight(
+            config.dhcp,
+            config.network,
+        )
+
+        rendered = render_dnsmasq_config(
+            config.dhcp,
+            output_path,
+        )
+
+    except (
+        ConfigStoreError,
+        DhcpPreflightError,
+        DhcpRenderError,
+        OSError,
+    ) as error:
+        _fail(str(error))
+
+    console.print(
+        f"[green]Rendered DHCP configuration:[/green] {rendered}"
+    )
+
+@dhcp_app.command("apply")
+def dhcp_apply() -> None:
+    """Render and apply SecBox DHCP configuration."""
+
+    store = _store()
+
+    rendered_file = Path("/run/secbox/secbox-dhcp.conf")
+
+    try:
+        config = store.load()
+
+        validate_dhcp_preflight(
+            config.dhcp,
+            config.network,
+        )
+
+        render_dnsmasq_config(
+            config.dhcp,
+            rendered_file,
+        )
+
+        apply_dnsmasq_config(
+            rendered_file=rendered_file,
+            target_file=Path("/etc/dnsmasq.d/secbox-dhcp.conf"),
+            backup_file=Path("/var/lib/secbox/dhcp/secbox-dhcp.conf.bak"),
+        )
+
+    except (
+        ConfigStoreError,
+        DhcpPreflightError,
+        DhcpRenderError,
+        DhcpApplyError,
+        OSError,
+    ) as error:
+        _fail(str(error))
+
+    console.print(
+        "[green]DHCP configuration applied successfully.[/green]"
     )

@@ -6,6 +6,8 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from secbox.modules.network.models import NetworkConfig
 
+from secbox.modules.dhcp.models import DhcpServerConfig
+
 
 class SystemConfig(BaseModel):
     """General SecBox system settings."""
@@ -42,3 +44,4 @@ class SecBoxConfig(BaseModel):
     schema_version: Literal[1] = 1
     system: SystemConfig = Field(default_factory=SystemConfig)
     network: NetworkConfig = Field(default_factory=NetworkConfig)
+    dhcp: list[DhcpServerConfig] = Field(default_factory=list)
