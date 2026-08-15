@@ -32,6 +32,11 @@ from secbox.modules.network.renderer import (
     NetworkRenderError,
     render_networkd,
 )
+from secbox.modules.network.executor import (
+    NetworkApplyError,
+    apply_networkd_config,
+)
+
 
 
 
@@ -375,3 +380,44 @@ def network_render(
 
     for file_path in files:
         console.print(f"  {file_path}")
+
+
+@network_app.command("apply")
+def network_apply() -> None:
+    """Apply the validated network configuration."""
+
+    store = _store()
+
+    try:
+        config = store.load()
+        runtime_interfaces = discover_manageable_interfaces()
+
+        validate_network_preflight(
+            config.network,
+            runtime_interfaces,
+        )
+
+        validate_management_interface(
+            config.network,
+            runtime_interfaces,
+        )
+
+        apply_networkd_config(
+            config=config.network,
+            staging_dir=Path("/run/secbox/network-stage"),
+            target_dir=Path("/etc/systemd/network"),
+            backup_dir=Path("/var/lib/secbox/network-backup"),
+        )
+
+    except (
+        ConfigStoreError,
+        NetworkDiscoveryError,
+        NetworkPreflightError,
+        NetworkApplyError,
+        OSError,
+    ) as error:
+        _fail(str(error))
+
+    console.print(
+        "[green]Network configuration applied successfully.[/green]"
+    )

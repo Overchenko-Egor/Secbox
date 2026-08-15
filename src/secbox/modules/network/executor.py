@@ -10,6 +10,20 @@ from secbox.modules.network.installer import (
 )
 from secbox.modules.network.models import NetworkConfig
 from secbox.modules.network.renderer import render_networkd
+import time
+
+from secbox.modules.network.discovery import (
+    NetworkDiscoveryError,
+    discover_manageable_interfaces,
+)
+from secbox.modules.network.verifier import (
+    NetworkVerificationError,
+    verify_network_config,
+)
+from secbox.modules.network.routes import (
+    RouteDiscoveryError,
+    discover_ipv4_routes,
+)
 
 
 class NetworkApplyError(Exception):
@@ -58,7 +72,6 @@ def apply_networkd_config(
 
     try:
         run_command(["networkctl", "reload"])
-
         for interface in config.interfaces:
             run_command(
                 [
@@ -67,6 +80,8 @@ def apply_networkd_config(
                     interface.name,
                 ]
             )
+
+        verify_applied_config(config)
 
     except NetworkApplyError:
         restore_networkd_backup(
@@ -106,3 +121,38 @@ def ensure_networkd_available() -> None:
         raise NetworkApplyError(
             "systemd-networkd is not active"
         )
+
+
+def verify_applied_config(
+    config: NetworkConfig,
+    attempts: int = 10,
+    delay_seconds: float = 1.0,
+) -> None:
+    """Wait for runtime network state to match desired configuration."""
+
+    last_error: Exception | None = None
+
+    for _ in range(attempts):
+        try:
+            runtime_interfaces = discover_manageable_interfaces()
+            runtime_routes = discover_ipv4_routes()
+
+            verify_network_config(
+                config,
+                runtime_interfaces,
+                runtime_routes,
+            )
+
+            return
+
+        except (
+            NetworkDiscoveryError,
+            RouteDiscoveryError,
+            NetworkVerificationError,
+        ) as error:
+            last_error = error
+            time.sleep(delay_seconds)
+
+    raise NetworkApplyError(
+        f"post-apply verification failed: {last_error}"
+    )
