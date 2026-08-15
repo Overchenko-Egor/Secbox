@@ -28,6 +28,11 @@ from secbox.modules.network.validator import (
     validate_management_interface,
     validate_network_preflight,
 )
+from secbox.modules.network.renderer import (
+    NetworkRenderError,
+    render_networkd,
+)
+
 
 
 
@@ -322,3 +327,51 @@ def network_check() -> None:
     console.print(
         "[green]Network configuration passed preflight checks.[/green]"
     )
+
+@network_app.command("render")
+def network_render(
+    output_dir: Path = typer.Option(
+        Path("/tmp/secbox-render"),
+        "--output-dir",
+        "-o",
+        help="Directory where rendered networkd files will be written.",
+    ),
+) -> None:
+    """Render network configuration without applying it."""
+
+    store = _store()
+
+    try:
+        config = store.load()
+        runtime_interfaces = discover_manageable_interfaces()
+
+        validate_network_preflight(
+            config.network,
+            runtime_interfaces,
+        )
+
+        validate_management_interface(
+            config.network,
+            runtime_interfaces,
+        )
+
+        files = render_networkd(
+            config.network,
+            output_dir,
+        )
+
+    except (
+        ConfigStoreError,
+        NetworkDiscoveryError,
+        NetworkPreflightError,
+        NetworkRenderError,
+        OSError,
+    ) as error:
+        _fail(str(error))
+
+    console.print(
+        f"[green]Rendered network configuration:[/green] {output_dir}"
+    )
+
+    for file_path in files:
+        console.print(f"  {file_path}")
