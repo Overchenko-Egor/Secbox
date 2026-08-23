@@ -26,19 +26,102 @@ def render_nftables_config(
         "flush ruleset",
         "",
         "table inet secbox_filter {",
-        "    chain input {",
-        "        type filter hook input priority 0;",
-        f"        policy {config.input_policy};",
-        "",
-        "        ct state established,related accept",
-        "        iifname \"lo\" accept",
     ]
+
+    if config.dynamic_blacklist_enabled:
+        lines.extend(
+            [
+                "    set blacklist_v4 {",
+                "        type ipv4_addr;",
+                "        flags timeout;",
+                f"        timeout {config.dynamic_blacklist_timeout};",
+                "    }",
+                "",
+            ]
+        )
+
+    lines.extend(
+        [
+            "    chain input {",
+            "        type filter hook input priority 0;",
+            f"        policy {config.input_policy};",
+            "",
+            "        ct state established,related accept",
+            "        ct state invalid drop",
+            "",
+            '        iifname "lo" accept',
+        ]
+    )
+
+    if config.dynamic_blacklist_enabled:
+        lines.extend(
+            [
+                "",
+                (
+                    "        ip saddr @blacklist_v4 "
+                    'log prefix "SECBOX_BLACKLIST_INPUT: " '
+                    "limit rate 5/second counter drop"
+                ),
+            ]
+        )
 
     if config.allow_icmp_input:
         lines.extend(
             [
+                "",
                 "        ip protocol icmp accept",
                 "        ip6 nexthdr ipv6-icmp accept",
+            ]
+        )
+
+    if config.management_tcp_ports:
+        ports = ", ".join(
+            str(port)
+            for port in sorted(set(config.management_tcp_ports))
+        )
+
+        lines.extend(
+            [
+                "",
+                (
+                    f'        iifname "{config.management_interface}" '
+                    f"tcp dport {{ {ports} }} "
+                    "ct state new accept"
+                ),
+            ]
+        )
+
+    lines.extend(
+        [
+            "",
+            (
+                f'        iifname "{config.wan_interface}" '
+                "udp sport 67 udp dport 68 accept"
+            ),
+        ]
+    )
+
+    if config.allow_dhcp_server:
+        lines.extend(
+            [
+                "",
+                (
+                    f'        iifname "{config.lan_interface}" '
+                    "udp sport 68 udp dport 67 accept"
+                ),
+            ]
+        )
+
+    if config.log_dropped_input and config.input_policy == "drop":
+        lines.extend(
+            [
+                "",
+                (
+                    f"        limit rate {config.log_rate} "
+                    f"burst {config.log_burst} packets "
+                    'log prefix "SECBOX_INPUT_DROP: " '
+                    "flags all counter"
+                ),
             ]
         )
 
@@ -51,13 +134,45 @@ def render_nftables_config(
             f"        policy {config.forward_policy};",
             "",
             "        ct state established,related accept",
+            "        ct state invalid drop",
         ]
     )
 
+    if config.dynamic_blacklist_enabled:
+        lines.extend(
+            [
+                "",
+                (
+                    "        ip saddr @blacklist_v4 "
+                    'log prefix "SECBOX_BLACKLIST_FORWARD: " '
+                    "limit rate 5/second counter drop"
+                ),
+            ]
+        )
+
     if config.allow_lan_to_wan:
-        lines.append(
-            f"        iifname \"{config.lan_interface}\" "
-            f"oifname \"{config.wan_interface}\" accept"
+        lines.extend(
+            [
+                "",
+                (
+                    f'        iifname "{config.lan_interface}" '
+                    f'oifname "{config.wan_interface}" '
+                    "ct state new accept"
+                ),
+            ]
+        )
+
+    if config.log_dropped_forward and config.forward_policy == "drop":
+        lines.extend(
+            [
+                "",
+                (
+                    f"        limit rate {config.log_rate} "
+                    f"burst {config.log_burst} packets "
+                    'log prefix "SECBOX_FORWARD_DROP: " '
+                    "flags all counter"
+                ),
+            ]
         )
 
     lines.extend(
@@ -69,7 +184,6 @@ def render_nftables_config(
             f"        policy {config.output_policy};",
             "    }",
             "}",
-            "",
         ]
     )
 
@@ -83,14 +197,16 @@ def render_nftables_config(
                 "        policy accept;",
                 "",
                 (
-                    f'        oifname "{config.wan_interface}" '
-                    f'iifname "{config.lan_interface}" masquerade'
+                    f'        iifname "{config.lan_interface}" '
+                    f'oifname "{config.wan_interface}" '
+                    "masquerade"
                 ),
                 "    }",
                 "}",
-                "",
             ]
         )
+
+    lines.append("")
 
     output_path.parent.mkdir(
         parents=True,
