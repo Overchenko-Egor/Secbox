@@ -21,6 +21,7 @@ def validate_firewall_preflight(
 
     wan = interfaces.get(firewall.wan_interface)
     lan = interfaces.get(firewall.lan_interface)
+    management = interfaces.get(firewall.management_interface)
 
     if wan is None:
         raise FirewallPreflightError(
@@ -34,6 +35,12 @@ def validate_firewall_preflight(
             f"{firewall.lan_interface}"
         )
 
+    if management is None:
+        raise FirewallPreflightError(
+            f"management interface not found in network config: "
+            f"{firewall.management_interface}"
+        )
+
     if wan.role != "wan":
         raise FirewallPreflightError(
             f"interface {wan.name} does not have WAN role"
@@ -44,7 +51,18 @@ def validate_firewall_preflight(
             f"interface {lan.name} does not have LAN role"
         )
 
-    if wan.name == lan.name:
+    if management.role != "mgmt":
         raise FirewallPreflightError(
-            "WAN and LAN interfaces must be different"
+            f"interface {management.name} does not have MGMT role"
+        )
+
+    role_interfaces = {
+        firewall.wan_interface,
+        firewall.lan_interface,
+        firewall.management_interface,
+    }
+
+    if len(role_interfaces) != 3:
+        raise FirewallPreflightError(
+            "WAN, LAN and management interfaces must be different"
         )
