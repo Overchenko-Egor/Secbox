@@ -10,6 +10,8 @@ from secbox.modules.dhcp.models import DhcpServerConfig
 
 from secbox.modules.firewall.models import FirewallConfig
 
+from secbox.modules.ids.config import IdsConfig
+
 class SystemConfig(BaseModel):
     """General SecBox system settings."""
 
@@ -47,3 +49,4 @@ class SecBoxConfig(BaseModel):
     network: NetworkConfig = Field(default_factory=NetworkConfig)
     dhcp: list[DhcpServerConfig] = Field(default_factory=list)
     firewall: FirewallConfig | None = None
+    ids: IdsConfig = Field(default_factory=IdsConfig,)

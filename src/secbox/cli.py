@@ -65,6 +65,15 @@ from secbox.modules.firewall.sysctl import (
     set_ipv4_forwarding,
 )
 
+from secbox.modules.blacklist.service import (
+    BlacklistError,
+    add_blacklist_entry,
+    delete_blacklist_entry,
+    list_blacklist_entries,
+    list_blacklist_state,
+    reconcile_blacklist,
+)
+
 
 
 
@@ -98,10 +107,17 @@ firewall_app = typer.Typer(
     no_args_is_help=True,
 )
 
+blacklist_app = typer.Typer(
+    name="blacklist",
+    help="Manage SecBox dynamic blacklist.",
+    no_args_is_help=True,
+)
+
 app.add_typer(firewall_app, name="firewall")
 app.add_typer(network_app, name="network")
 app.add_typer(config_app, name="config")
 app.add_typer(dhcp_app, name="dhcp")
+app.add_typer(blacklist_app, name="blacklist",)
 
 console = Console()
 error_console = Console(stderr=True)
@@ -613,6 +629,20 @@ def firewall_apply() -> None:
             config.firewall.enable_ipv4_forwarding
         )
 
+        try:
+            restored_count, expired_count = reconcile_blacklist()
+        except BlacklistError as error:
+            console.print(
+                "[yellow]Firewall applied, but blacklist reconciliation failed: "
+                f"{error}[/yellow]"
+            )
+        else:
+            console.print(
+                "[green]Blacklist reconciled.[/green] "
+                f"Restored: {restored_count}, "
+                f"expired removed: {expired_count}"
+            )
+
     except (
         ConfigStoreError,
         FirewallPreflightError,
@@ -625,4 +655,121 @@ def firewall_apply() -> None:
 
     console.print(
         "[green]Firewall configuration applied successfully.[/green]"
+    )
+
+
+@blacklist_app.command("add")
+def blacklist_add(
+    address: str = typer.Argument(
+        ...,
+        help="IPv4 address to block.",
+    ),
+    timeout: str = typer.Option(
+        "1h",
+        "--timeout",
+        "-t",
+        help="Blacklist timeout, for example 10m, 1h or 1d.",
+    ),
+    reason: str = typer.Option(
+        "manual",
+        "--reason",
+        "-r",
+        help="Reason for blocking the address.",
+    ),
+) -> None:
+    """Add an IPv4 address to the dynamic blacklist."""
+
+    try:
+        config = _store().load()
+
+        protected_networks: list[str] = []
+
+        if config.firewall is not None:
+            protected_networks = (
+                config.firewall.dynamic_blacklist_protected_networks
+            )
+
+        add_blacklist_entry(
+            address=address,
+            timeout=timeout,
+            reason=reason,
+            source="cli",
+            protected_networks=protected_networks,
+        )
+
+    except (
+        ConfigStoreError,
+        BlacklistError,
+    ) as error:
+        _fail(str(error))
+
+    console.print(
+        f"[green]Blacklisted:[/green] {address} "
+        f"(timeout: {timeout}, reason: {reason})"
+    )
+
+
+@blacklist_app.command("del")
+def blacklist_delete(
+    address: str = typer.Argument(
+        ...,
+        help="IPv4 address to remove.",
+    ),
+) -> None:
+    """Remove an IPv4 address from the dynamic blacklist."""
+
+    try:
+        delete_blacklist_entry(address)
+    except BlacklistError as error:
+        _fail(str(error))
+
+    console.print(
+        f"[green]Removed from blacklist:[/green] {address}"
+    )
+
+@blacklist_app.command("list")
+def blacklist_list() -> None:
+    """Display current dynamic blacklist entries."""
+
+    try:
+        nft_entries = set(
+            list_blacklist_entries()
+        )
+
+        state_entries = list_blacklist_state()
+
+    except BlacklistError as error:
+        _fail(str(error))
+
+    if not nft_entries:
+        console.print(
+            "[yellow]Blacklist is empty.[/yellow]"
+        )
+        return
+
+    for entry in state_entries:
+        if entry.address not in nft_entries:
+            continue
+
+        console.print(
+            f"{entry.address} "
+            f"reason={entry.reason} "
+            f"source={entry.source} "
+            f"expires={entry.expires_at.isoformat()}"
+        )
+
+
+@blacklist_app.command("reconcile")
+def blacklist_reconcile() -> None:
+    """Synchronize persistent blacklist state with nftables."""
+
+    try:
+        restored_count, expired_count = reconcile_blacklist()
+    except BlacklistError as error:
+        _fail(str(error))
+
+    console.print(
+        "[green]Blacklist reconciled.[/green] "
+        f"Restored: {restored_count}, "
+        f"expired removed: {expired_count}"
     )

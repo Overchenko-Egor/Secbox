@@ -40,6 +40,7 @@ class FirewallConfig(BaseModel):
 
     dynamic_blacklist_enabled: bool = True
     dynamic_blacklist_timeout: str = "1h"
+    dynamic_blacklist_protected_networks: list[str] = Field(default_factory=list)
 
     input_policy: FirewallPolicy = "drop"
     forward_policy: FirewallPolicy = "drop"

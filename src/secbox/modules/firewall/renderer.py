@@ -45,11 +45,6 @@ def render_nftables_config(
             "    chain input {",
             "        type filter hook input priority 0;",
             f"        policy {config.input_policy};",
-            "",
-            "        ct state established,related accept",
-            "        ct state invalid drop",
-            "",
-            '        iifname "lo" accept',
         ]
     )
 
@@ -64,6 +59,16 @@ def render_nftables_config(
                 ),
             ]
         )
+
+    lines.extend(
+        [
+            "",
+            "        ct state established,related accept",
+            "        ct state invalid drop",
+            "",
+            '        iifname "lo" accept',
+        ]
+    )
 
     if config.allow_icmp_input:
         lines.extend(
@@ -132,9 +137,6 @@ def render_nftables_config(
             "    chain forward {",
             "        type filter hook forward priority 0;",
             f"        policy {config.forward_policy};",
-            "",
-            "        ct state established,related accept",
-            "        ct state invalid drop",
         ]
     )
 
@@ -149,6 +151,14 @@ def render_nftables_config(
                 ),
             ]
         )
+
+    lines.extend(
+        [
+            "",
+            "        ct state established,related accept",
+            "        ct state invalid drop",
+        ]
+    )
 
     if config.allow_lan_to_wan:
         lines.extend(
