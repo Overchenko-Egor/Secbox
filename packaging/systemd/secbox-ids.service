@@ -1,0 +1,28 @@
+[Unit]
+Description=SecBox IDS Event Processor
+Documentation=man:suricata(8)
+
+BindsTo=suricata.service
+After=suricata.service network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+
+WorkingDirectory=/home/egor/dev/secbox
+
+Environment=SECBOX_CONFIG_PATH=/etc/secbox/config.yml
+Environment=PYTHONUNBUFFERED=1
+
+ExecStart=/home/egor/dev/secbox/.venv/bin/secboxctl ids run
+
+Restart=on-failure
+RestartSec=3s
+
+TimeoutStopSec=15s
+KillSignal=SIGTERM
+
+NoNewPrivileges=true
+
+[Install]
+WantedBy=multi-user.target
