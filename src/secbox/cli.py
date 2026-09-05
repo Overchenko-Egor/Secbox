@@ -84,6 +84,20 @@ from secbox.modules.network.discovery import (
     discover_interfaces,
 )
 
+import logging
+from threading import Event
+
+from secbox.modules.ids.daemon import (
+    IdsDaemon,
+    IdsDaemonError,
+    install_signal_handlers,
+)
+from secbox.modules.ids.reader import EveTailReader
+from secbox.modules.ids.worker import (
+    IdsWorkerError,
+    StreamingIdsWorker,
+)
+
 
 
 
@@ -926,3 +940,120 @@ def ids_analyze() -> None:
     console.print(
         table
     )
+
+
+@ids_app.command("run")
+def ids_run() -> None:
+    """Run the continuous Suricata IDS processing daemon."""
+
+    logging.basicConfig(
+        level=logging.INFO,
+        format=(
+            "%(asctime)s "
+            "%(levelname)s "
+            "%(name)s: "
+            "%(message)s"
+        ),
+    )
+
+    try:
+        config = _store().load()
+
+        if not config.ids.enabled:
+            console.print(
+                "IDS is disabled in configuration."
+            )
+            raise typer.Exit(
+                code=0
+            )
+
+        runtime_interfaces = (
+            discover_interfaces()
+        )
+
+        worker = StreamingIdsWorker(
+            config,
+            runtime_interfaces,
+        )
+
+        reader = EveTailReader(
+            config.ids.eve_path,
+            poll_interval=0.05,
+            start_at_end=True,
+        )
+
+        daemon = IdsDaemon(
+            reader,
+            worker,
+        )
+
+        stop_event = Event()
+
+        install_signal_handlers(
+            stop_event
+        )
+
+        console.print(
+            "SecBox IDS daemon started."
+        )
+
+        console.print(
+            f"EVE log: "
+            f"{config.ids.eve_path}"
+        )
+
+        daemon.run(
+            stop_event
+        )
+
+        daemon_stats = (
+            daemon.stats()
+        )
+
+        worker_stats = (
+            worker.stats()
+        )
+
+        console.print(
+            "SecBox IDS daemon stopped."
+        )
+
+        console.print(
+            (
+                "Runtime: "
+                f"lines={daemon_stats.lines_read}, "
+                f"decisions="
+                f"{daemon_stats.decisions_emitted}, "
+                f"reader_resets="
+                f"{daemon_stats.reader_resets}"
+            )
+        )
+
+        console.print(
+            (
+                "Worker: "
+                f"alerts="
+                f"{worker_stats.parsed_alerts}, "
+                f"logical_alerts="
+                f"{worker_stats.logical_alerts}, "
+                f"detections="
+                f"{worker_stats.detections}, "
+                f"parse_errors="
+                f"{worker_stats.parse_errors}, "
+                f"classification_errors="
+                f"{worker_stats.classification_errors}"
+            )
+        )
+
+    except (
+        IdsDaemonError,
+        IdsWorkerError,
+    ) as error:
+        console.print(
+            f"[red]IDS daemon failed:[/red] "
+            f"{error}"
+        )
+
+        raise typer.Exit(
+            code=1
+        ) from error
