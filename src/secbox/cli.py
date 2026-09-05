@@ -8,6 +8,7 @@ import yaml
 from secbox.modules.network.models import NetworkConfig
 from pydantic import ValidationError
 from rich.console import Console
+from rich.table import Table
 
 from secbox.core.config_store import (
     ConfigBackupNotFoundError,
@@ -74,6 +75,15 @@ from secbox.modules.blacklist.service import (
     reconcile_blacklist,
 )
 
+from secbox.modules.ids.processor import (
+    IdsProcessorError,
+    process_eve_file,
+)
+
+from secbox.modules.network.discovery import (
+    discover_interfaces,
+)
+
 
 
 
@@ -113,11 +123,17 @@ blacklist_app = typer.Typer(
     no_args_is_help=True,
 )
 
+ids_app = typer.Typer(
+    help="Suricata IDS analysis commands."
+)
+
 app.add_typer(firewall_app, name="firewall")
 app.add_typer(network_app, name="network")
 app.add_typer(config_app, name="config")
 app.add_typer(dhcp_app, name="dhcp")
 app.add_typer(blacklist_app, name="blacklist",)
+app.add_typer(ids_app, name="ids",)
+
 
 console = Console()
 error_console = Console(stderr=True)
@@ -772,4 +788,141 @@ def blacklist_reconcile() -> None:
         "[green]Blacklist reconciled.[/green] "
         f"Restored: {restored_count}, "
         f"expired removed: {expired_count}"
+    )
+
+
+@ids_app.command("analyze")
+def ids_analyze() -> None:
+    """Analyze the current Suricata EVE log."""
+
+    store = _store()
+
+    try:
+        config = store.load()
+    except Exception as error:
+        console.print(
+            "[red]Failed to load SecBox configuration:[/red] "
+            f"{error}"
+        )
+        raise typer.Exit(code=1) from error
+
+    if not config.ids.enabled:
+        console.print(
+            "[yellow]IDS is disabled in configuration.[/yellow]"
+        )
+        raise typer.Exit(code=0)
+
+    try:
+        runtime_interfaces = (
+            discover_interfaces()
+        )
+
+        result = process_eve_file(
+            config,
+            runtime_interfaces,
+        )
+
+    except IdsProcessorError as error:
+        console.print(
+            "[red]IDS analysis failed:[/red] "
+            f"{error}"
+        )
+        raise typer.Exit(code=1) from error
+
+    console.print()
+    console.print(
+        "[bold]SecBox IDS Analysis[/bold]"
+    )
+    console.print()
+
+    console.print(
+        f"Observations: "
+        f"{result.observation_count}"
+    )
+
+    console.print(
+        f"Logical alerts: "
+        f"{result.logical_alert_count}"
+    )
+
+    console.print(
+        f"Detections: "
+        f"{result.detection_count}"
+    )
+
+    console.print(
+        f"Decisions: "
+        f"{result.decision_count}"
+    )
+
+    console.print(
+        f"Parse errors: "
+        f"{result.parse_error_count}"
+    )
+
+    console.print(
+        f"Classification errors: "
+        f"{result.classification_error_count}"
+    )
+
+    console.print()
+
+    if not result.decisions:
+        console.print(
+            "[green]No IDS detections found.[/green]"
+        )
+        return
+
+    table = Table(
+        title="IDS Policy Decisions"
+    )
+
+    table.add_column(
+        "Action"
+    )
+
+    table.add_column(
+        "Source"
+    )
+
+    table.add_column(
+        "Destination"
+    )
+
+    table.add_column(
+        "SID"
+    )
+
+    table.add_column(
+        "Severity"
+    )
+
+    table.add_column(
+        "Count"
+    )
+
+    table.add_column(
+        "Signature"
+    )
+
+    table.add_column(
+        "Reason"
+    )
+
+    for decision in result.decisions:
+        detection = decision.detection
+
+        table.add_row(
+            decision.action.value.upper(),
+            detection.source_ip,
+            detection.destination_ip,
+            str(detection.signature_id),
+            str(detection.severity),
+            str(detection.count),
+            detection.signature,
+            decision.reason,
+        )
+
+    console.print(
+        table
     )
