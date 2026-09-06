@@ -91,14 +91,23 @@ from secbox.modules.ids.daemon import (
     IdsDaemon,
     IdsDaemonError,
     install_signal_handlers,
+    log_policy_decision,
+)
+from secbox.modules.ids.runtime import (
+    build_ids_response_handler,
 )
 from secbox.modules.ids.reader import EveTailReader
 from secbox.modules.ids.worker import (
     IdsWorkerError,
     StreamingIdsWorker,
 )
+from secbox.modules.ids.policy import (
+    PolicyDecision,
+)
 
-
+from secbox.modules.ids.response import (
+    IdsResponseError,
+)
 
 
 app = typer.Typer(
@@ -976,15 +985,36 @@ def ids_run() -> None:
             runtime_interfaces,
         )
 
+        response_handler = (
+            build_ids_response_handler(
+                config,
+                runtime_interfaces,
+            )
+        )
+
         reader = EveTailReader(
             config.ids.eve_path,
             poll_interval=0.05,
             start_at_end=True,
         )
 
+
+        def handle_decision(
+            decision: PolicyDecision,
+        ) -> None:
+            log_policy_decision(
+                decision
+            )
+
+            response_handler.handle(
+                decision
+            )
+
+
         daemon = IdsDaemon(
             reader,
             worker,
+            decision_handler=handle_decision,
         )
 
         stop_event = Event()
@@ -1048,6 +1078,7 @@ def ids_run() -> None:
     except (
         IdsDaemonError,
         IdsWorkerError,
+        IdsResponseError,
     ) as error:
         console.print(
             f"[red]IDS daemon failed:[/red] "

@@ -2,7 +2,7 @@
 
 import ipaddress
 from datetime import timedelta
-
+from secbox.modules.ids.response import IdsResponseHandler
 from secbox.core.models import SecBoxConfig
 from secbox.modules.ids.config import (
     IdsConfig,
@@ -197,4 +197,33 @@ def get_aggregation_window(
         seconds=(
             config.aggregation_window_seconds
         )
+    )
+
+
+def build_ids_response_handler(
+    config: SecBoxConfig,
+    runtime_interfaces: list[
+        NetworkInterfaceState
+    ],
+) -> IdsResponseHandler:
+    """Create the automatic IDS response handler."""
+
+    return IdsResponseHandler(
+        automatic_blackhole_enabled=(
+            config.ids
+            .automatic_blackhole
+            .enabled
+        ),
+        automatic_blackhole_timeout=(
+            config.ids
+            .automatic_blackhole
+            .timeout
+        ),
+        protected_networks=tuple(
+            str(network)
+            for network in build_protected_networks(
+                config,
+                runtime_interfaces,
+            )
+        ),
     )
