@@ -23,8 +23,9 @@ def discover_interfaces() -> list[NetworkInterfaceState]:
             check=True,
             capture_output=True,
             text=True,
+            timeout=5,
         )
-    except (OSError, subprocess.CalledProcessError) as error:
+    except (OSError, subprocess.SubprocessError) as error:
         raise NetworkDiscoveryError(
             f"failed to discover network interfaces: {error}"
         ) from error
