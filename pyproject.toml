@@ -21,7 +21,15 @@ dev = [
     "ruff",
     "mypy",
     "types-PyYAML",
+    "httpx>=0.27,<1",
 ]
+web = [
+    "fastapi>=0.115,<1",
+    "uvicorn>=0.30,<1",
+]
+
+[tool.setuptools.package-data]
+"secbox.web" = ["static/*.html", "static/*.css", "static/*.js"]
 
 [tool.setuptools.packages.find]
 where = ["src"]

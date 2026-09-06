@@ -19,6 +19,7 @@ from secbox.core.config_store import (
 from secbox.core.models import SystemConfig
 from secbox.core.paths import get_config_path
 from secbox.core.version import __version__
+from secbox.web.cli import app as web_app
 from secbox.modules.network.discovery import (
     NetworkDiscoveryError,
     discover_manageable_interfaces,
@@ -157,6 +158,7 @@ app.add_typer(config_app, name="config")
 app.add_typer(dhcp_app, name="dhcp")
 app.add_typer(blacklist_app, name="blacklist",)
 app.add_typer(ids_app, name="ids",)
+app.add_typer(web_app, name="web")
 
 
 console = Console()

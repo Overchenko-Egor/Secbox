@@ -1,0 +1,1 @@
+"""SecBox web management interface."""

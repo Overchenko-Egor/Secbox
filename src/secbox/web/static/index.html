@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>SecBox — управление шлюзом</title>
+  <link rel="stylesheet" href="/assets/style.css">
+  <script src="/assets/app.js" defer></script>
+</head>
+<body>
+  <aside>
+    <a class="brand" href="#overview"><span class="brand-mark">S</span> SecBox</a>
+    <p class="eyebrow">Управление шлюзом</p>
+    <nav aria-label="Разделы">
+      <a href="#overview">Обзор</a><a href="#network">Сеть и маршруты</a>
+      <a href="#services">Сервисы</a><a href="#configuration">Конфигурация</a>
+    </nav>
+    <div class="aside-note">● Просмотр и проверка<small>Изменения сети выполняются через CLI.</small></div>
+  </aside>
+  <main>
+    <header id="overview">
+      <div><p class="eyebrow">Состояние системы</p><h1 id="hostname">SecBox</h1><p id="observed">Загрузка данных…</p></div>
+      <button id="refresh" type="button">Обновить</button>
+    </header>
+    <p id="global-message" role="status" aria-live="polite"></p>
+    <section class="metrics" aria-label="Показатели системы">
+      <article class="metric"><span>Время работы</span><strong id="uptime">—</strong><small>С момента загрузки</small></article>
+      <article class="metric"><span>Нагрузка системы</span><strong id="load">—</strong><small>Средняя за 1 / 5 / 15 минут</small></article>
+      <article class="metric"><span>Используется памяти</span><strong id="memory">—</strong><small id="memory-total">Данные Linux /proc</small></article>
+      <article class="metric"><span>Сетевые интерфейсы</span><strong id="interface-count">—</strong><small>Без loopback</small></article>
+    </section>
+    <section id="network" class="panel">
+      <div class="section-heading"><div><p class="eyebrow">Сеть</p><h2>Интерфейсы</h2></div><span class="tag">Текущее состояние</span></div>
+      <p id="network-error" class="error" role="status"></p>
+      <div class="table-wrap"><table><thead><tr><th>Интерфейс</th><th>Состояние</th><th>IP-адреса</th><th>MAC</th><th>MTU</th></tr></thead><tbody id="interfaces-body"></tbody></table></div>
+      <h3>Маршруты IPv4</h3><p id="routes-error" class="error" role="status"></p>
+      <div class="table-wrap"><table><thead><tr><th>Назначение</th><th>Шлюз</th><th>Интерфейс</th><th>Таблица</th><th>Метрика</th></tr></thead><tbody id="routes-body"></tbody></table></div>
+    </section>
+    <section id="services" class="panel">
+      <div class="section-heading"><div><p class="eyebrow">Компоненты</p><h2>Сервисы</h2></div></div>
+      <p class="hint">Состояния служб systemd. Они не подтверждают, что правила фильтрации применены или трафик защищён.</p>
+      <p id="services-error" class="error" role="status"></p><div id="service-list" class="service-list"></div>
+    </section>
+    <section id="configuration" class="panel">
+      <div class="section-heading"><div><p class="eyebrow">Настройки</p><h2>Проверка конфигурации</h2></div><a class="button secondary" href="/api/v1/config/export">Скачать YAML</a></div>
+      <p class="hint">Загрузите текущие настройки и отредактируйте копию ниже. Проверка создаёт предпросмотр файлов; сохранения и применения на шлюзе не происходит.</p>
+      <div class="actions"><button id="load-config" type="button" class="secondary">Загрузить текущую</button><button id="preview" type="button">Проверить и показать файлы</button></div>
+      <label for="config-editor">Конфигурация в формате JSON</label>
+      <textarea id="config-editor" spellcheck="false" rows="16" placeholder="Нажмите «Загрузить текущую»"></textarea>
+      <p id="config-message" role="status" aria-live="polite"></p><div id="preview-files"></div>
+    </section>
+    <footer>SecBox · Этап 1: наблюдение и проверка <a href="/api/v1/openapi.json">Схема API</a></footer>
+  </main>
+</body>
+</html>

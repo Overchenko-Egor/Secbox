@@ -30,3 +30,5 @@ config/local/
 build/
 dist/
 packaging/output/
+
+out/
