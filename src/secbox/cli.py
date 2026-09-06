@@ -95,6 +95,7 @@ from secbox.modules.ids.daemon import (
 )
 from secbox.modules.ids.runtime import (
     build_ids_response_handler,
+    refresh_ids_runtime_state,
 )
 from secbox.modules.ids.reader import EveTailReader
 from secbox.modules.ids.worker import (
@@ -1006,15 +1007,56 @@ def ids_run() -> None:
                 decision
             )
 
-            response_handler.handle(
-                decision
-            )
+            try:
+                response_handler.handle(
+                    decision
+                )
 
+            except IdsResponseError as error:
+                logging.getLogger(
+                    __name__
+                ).error(
+                    (
+                        "IDS response failed; "
+                        "continuing event processing: %s"
+                    ),
+                    error,
+                )
+
+
+        def refresh_runtime() -> None:
+            try:
+                refreshed_interfaces = (
+                    discover_interfaces()
+                )
+
+                refresh_ids_runtime_state(
+                    config,
+                    refreshed_interfaces,
+                    worker,
+                    response_handler,
+                )
+
+            except Exception as error:
+                logging.getLogger(
+                    __name__
+                ).warning(
+                    (
+                        "IDS runtime network "
+                        "refresh failed; "
+                        "keeping previous state: %s"
+                    ),
+                    error,
+                )
 
         daemon = IdsDaemon(
             reader,
             worker,
             decision_handler=handle_decision,
+            runtime_refresh_handler=(
+                refresh_runtime
+            ),
+            runtime_refresh_interval=5.0,
         )
 
         stop_event = Event()
