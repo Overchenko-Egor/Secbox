@@ -10,16 +10,19 @@ from secbox.modules.ids.config import (
 from secbox.modules.ids.policy import (
     IdsPolicyConfig,
 )
+from secbox.modules.network.state import (
+    NetworkInterfaceState,
+)
 
 
 class IdsRuntimeConfigError(Exception):
     """Raised when IDS runtime configuration is invalid."""
 
 
-def build_protected_networks(
+def build_configured_protected_networks(
     config: SecBoxConfig,
 ) -> tuple[ipaddress.IPv4Network, ...]:
-    """Build IDS protected networks from SecBox configuration."""
+    """Build explicitly configured IDS protected networks."""
 
     if config.firewall is None:
         return ()
@@ -58,8 +61,94 @@ def build_protected_networks(
     return tuple(networks)
 
 
+def build_runtime_local_networks(
+    runtime_interfaces: list[
+        NetworkInterfaceState
+    ],
+) -> tuple[ipaddress.IPv4Network, ...]:
+    """Build /32 networks for all local SecBox IPv4 addresses."""
+
+    networks: list[
+        ipaddress.IPv4Network
+    ] = []
+
+    for interface in runtime_interfaces:
+        for address in interface.addresses:
+            if address.family != "inet":
+                continue
+
+            try:
+                parsed = ipaddress.ip_address(
+                    address.address
+                )
+            except ValueError as error:
+                raise IdsRuntimeConfigError(
+                    "invalid runtime IPv4 address "
+                    f"on {interface.name}: "
+                    f"{address.address}"
+                ) from error
+
+            if not isinstance(
+                parsed,
+                ipaddress.IPv4Address,
+            ):
+                continue
+
+            networks.append(
+                ipaddress.IPv4Network(
+                    f"{parsed}/32"
+                )
+            )
+
+    return tuple(networks)
+
+
+def build_protected_networks(
+    config: SecBoxConfig,
+    runtime_interfaces: list[
+        NetworkInterfaceState
+    ],
+) -> tuple[ipaddress.IPv4Network, ...]:
+    """Build effective networks protected from IDS blocking."""
+
+    configured = (
+        build_configured_protected_networks(
+            config
+        )
+    )
+
+    runtime_local = (
+        build_runtime_local_networks(
+            runtime_interfaces
+        )
+    )
+
+    networks: list[
+        ipaddress.IPv4Network
+    ] = []
+
+    seen: set[
+        ipaddress.IPv4Network
+    ] = set()
+
+    for network in (
+        *configured,
+        *runtime_local,
+    ):
+        if network in seen:
+            continue
+
+        seen.add(network)
+        networks.append(network)
+
+    return tuple(networks)
+
+
 def build_ids_policy_config(
     config: SecBoxConfig,
+    runtime_interfaces: list[
+        NetworkInterfaceState
+    ],
 ) -> IdsPolicyConfig:
     """Create runtime Policy Engine configuration."""
 
@@ -79,7 +168,10 @@ def build_ids_policy_config(
             settings.maximum_block_severity
         ),
         protected_networks=(
-            build_protected_networks(config)
+            build_protected_networks(
+                config,
+                runtime_interfaces,
+            )
         ),
     )
 

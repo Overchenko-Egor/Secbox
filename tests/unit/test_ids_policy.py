@@ -249,6 +249,56 @@ def test_protected_source_is_never_block_candidate() -> None:
     )
 
 
+@pytest.mark.parametrize(
+    "source_ip",
+    [
+        "192.168.1.63",
+        "192.168.50.1",
+        "192.168.100.2",
+    ],
+)
+def test_local_secbox_address_is_never_block_candidate(
+    source_ip: str,
+) -> None:
+    """A local SecBox address must never become a block candidate."""
+
+    detection = make_detection(
+        source_ip=source_ip,
+        destination_ip="192.168.1.63",
+        interface="wan0",
+        severity=1,
+        count=20,
+    )
+
+    protected_networks = tuple(
+        ipaddress.IPv4Network(
+            f"{address}/32"
+        )
+        for address in (
+            "192.168.1.63",
+            "192.168.50.1",
+            "192.168.100.2",
+        )
+    )
+
+    decision = evaluate_detection(
+        detection,
+        IdsPolicyConfig(
+            protected_networks=(
+                protected_networks
+            ),
+        ),
+    )
+
+    assert decision.action == (
+        PolicyAction.LOG
+    )
+
+    assert "protected network" in (
+        decision.reason
+    )
+
+
 def test_custom_block_threshold_is_respected() -> None:
     """Use configurable repetition thresholds."""
 

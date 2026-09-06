@@ -107,7 +107,8 @@ class StreamingIdsWorker:
 
             self.policy_config: IdsPolicyConfig = (
                 build_ids_policy_config(
-                    config
+                    config,
+                    runtime_interfaces,
                 )
             )
 

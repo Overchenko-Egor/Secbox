@@ -115,7 +115,8 @@ def process_eve_lines(
 
         policy_config = (
             build_ids_policy_config(
-                config
+                config,
+                runtime_interfaces,
             )
         )
 
