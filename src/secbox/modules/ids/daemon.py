@@ -34,6 +34,11 @@ DecisionHandler = Callable[
     None,
 ]
 
+RuntimeRefreshHandler = Callable[
+    [],
+    None,
+]
+
 
 class IdsDaemon:
     """Continuously connect EVE log input to the IDS worker."""
@@ -44,6 +49,10 @@ class IdsDaemon:
         worker: StreamingIdsWorker,
         *,
         decision_handler: DecisionHandler | None = None,
+        runtime_refresh_handler: (
+            RuntimeRefreshHandler | None
+        ) = None,
+        runtime_refresh_interval: float = 5.0,
     ) -> None:
         self.reader = reader
         self.worker = worker
@@ -53,6 +62,24 @@ class IdsDaemon:
             if decision_handler is not None
             else log_policy_decision
         )
+
+        if runtime_refresh_interval <= 0:
+            raise ValueError(
+                "runtime_refresh_interval must "
+                "be greater than zero"
+            )
+
+        self.runtime_refresh_handler = (
+            runtime_refresh_handler
+        )
+
+        self.runtime_refresh_interval = (
+            runtime_refresh_interval
+        )
+
+        self._last_runtime_refresh: (
+            float | None
+        ) = None
 
         self._iterations = 0
         self._lines_read = 0
@@ -78,6 +105,10 @@ class IdsDaemon:
 
         self._iterations += 1
         self._lines_read += len(lines)
+
+        self.refresh_runtime_if_due(
+            now=now,
+        )
 
         decisions: list[
             PolicyDecision
@@ -119,6 +150,36 @@ class IdsDaemon:
             self._reader_resets += 1
 
         return reset
+
+    def refresh_runtime_if_due(
+        self,
+        *,
+        now: float,
+    ) -> bool:
+        """Refresh runtime state if interval elapsed."""
+
+        if self.runtime_refresh_handler is None:
+            return False
+
+        if self._last_runtime_refresh is not None:
+            elapsed = (
+                now
+                - self._last_runtime_refresh
+            )
+
+            if (
+                elapsed
+                < self.runtime_refresh_interval
+            ):
+                return False
+
+        self.runtime_refresh_handler()
+
+        self._last_runtime_refresh = (
+            now
+        )
+
+        return True
 
     def run(
         self,

@@ -153,6 +153,45 @@ class StreamingIdsWorker:
         self._detections = 0
         self._decisions = 0
 
+
+    def refresh_runtime(
+        self,
+        runtime_interfaces: list[
+            NetworkInterfaceState
+        ],
+    ) -> None:
+        """Refresh IDS network and policy runtime state."""
+
+        try:
+            network_context = (
+                build_ids_network_context(
+                    self.config,
+                    runtime_interfaces,
+                )
+            )
+
+            policy_config = (
+                build_ids_policy_config(
+                    self.config,
+                    runtime_interfaces,
+                )
+            )
+
+        except (
+            IdsContextError,
+            IdsRuntimeConfigError,
+        ) as error:
+            raise IdsWorkerError(
+                (
+                    "failed to refresh IDS runtime "
+                    f"state: {error}"
+                )
+            ) from error
+
+        self.network_context = network_context
+        self.policy_config = policy_config
+
+
     def ingest_line(
         self,
         line: str,

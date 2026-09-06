@@ -7,6 +7,10 @@ import subprocess
 from datetime import UTC, datetime, timedelta
 
 from secbox.modules.blacklist.models import BlacklistEntry
+from secbox.modules.blacklist.lock import (
+    BlacklistLockError,
+    blacklist_lock,
+)
 from secbox.modules.blacklist.store import (
     BlacklistStore,
     BlacklistStoreError,
@@ -22,6 +26,12 @@ NFT_SET = "blacklist_v4"
 
 class BlacklistError(Exception):
     """Raised when dynamic blacklist operation fails."""
+
+
+def locked_blacklist_operation():
+    """Return blacklist operation lock with normalized errors."""
+
+    return blacklist_lock()
 
 
 def load_store_entries(
@@ -167,7 +177,7 @@ def run_nft(
         ) from error
 
 
-def add_blacklist_entry(
+def _add_blacklist_entry_unlocked(
     address: str,
     timeout: str,
     reason: str = "manual",
@@ -175,7 +185,7 @@ def add_blacklist_entry(
     store: BlacklistStore | None = None,
     protected_networks: list[str] | None = None,
 ) -> None:
-    """Add IPv4 address to dynamic blacklist."""
+    """Add IPv4 address using persistent state as source of truth."""
 
     normalized_address = validate_ipv4_address(
         address
@@ -191,24 +201,12 @@ def add_blacklist_entry(
 
     duration = parse_timeout(timeout)
 
-    run_nft(
-        [
-            "add",
-            "element",
-            NFT_FAMILY,
-            NFT_TABLE,
-            NFT_SET,
-            (
-                "{ "
-                f"{normalized_address} "
-                f"timeout {timeout} "
-                "}"
-            ),
-        ]
-    )
-
     if store is None:
         store = BlacklistStore()
+
+    previous_entries = load_store_entries(
+        store
+    )
 
     now = datetime.now(UTC)
 
@@ -220,58 +218,135 @@ def add_blacklist_entry(
         expires_at=now + duration,
     )
 
-    entries = load_store_entries(store)
-
-    entries = [
+    new_entries = [
         existing
-        for existing in entries
+        for existing in previous_entries
         if existing.address != normalized_address
     ]
 
-    entries.append(entry)
+    new_entries.append(entry)
 
+    # Persistent state is written first. If the process dies
+    # afterwards, reconcile can restore the nftables element.
     save_store_entries(
         store,
-        entries,
+        new_entries,
     )
 
+    add_command = [
+        "add",
+        "element",
+        NFT_FAMILY,
+        NFT_TABLE,
+        NFT_SET,
+        (
+            "{ "
+            f"{normalized_address} "
+            f"timeout {timeout} "
+            "}"
+        ),
+    ]
 
-def delete_blacklist_entry(
+    try:
+        try:
+            run_nft(add_command)
+
+        except BlacklistError as error:
+            if "File exists" not in str(error):
+                raise
+
+            run_nft(
+                [
+                    "delete",
+                    "element",
+                    NFT_FAMILY,
+                    NFT_TABLE,
+                    NFT_SET,
+                    f"{{ {normalized_address} }}",
+                ]
+            )
+
+            run_nft(add_command)
+
+    except BlacklistError as nft_error:
+        try:
+            save_store_entries(
+                store,
+                previous_entries,
+            )
+
+        except BlacklistError as rollback_error:
+            raise BlacklistError(
+                (
+                    "nftables update failed and "
+                    "persistent state rollback also failed: "
+                    f"nft={nft_error}; "
+                    f"rollback={rollback_error}"
+                )
+            ) from nft_error
+
+        raise
+
+
+def _delete_blacklist_entry_unlocked(
     address: str,
     store: BlacklistStore | None = None,
 ) -> None:
-    """Remove IPv4 address from dynamic blacklist."""
+    """Delete IPv4 address with persistent state rollback."""
 
     normalized_address = validate_ipv4_address(
         address
     )
 
-    run_nft(
-        [
-            "delete",
-            "element",
-            NFT_FAMILY,
-            NFT_TABLE,
-            NFT_SET,
-            f"{{ {normalized_address} }}",
-        ]
-    )
-
     if store is None:
         store = BlacklistStore()
 
-    entries = load_store_entries(store)
+    previous_entries = load_store_entries(
+        store
+    )
 
-    entries = [
+    new_entries = [
         entry
-        for entry in entries
+        for entry in previous_entries
         if entry.address != normalized_address
     ]
 
+    # Remove from persistent desired state first.
     save_store_entries(
         store,
-        entries,
+        new_entries,
     )
+
+    try:
+        run_nft(
+            [
+                "delete",
+                "element",
+                NFT_FAMILY,
+                NFT_TABLE,
+                NFT_SET,
+                f"{{ {normalized_address} }}",
+            ]
+        )
+
+    except BlacklistError as nft_error:
+        try:
+            save_store_entries(
+                store,
+                previous_entries,
+            )
+
+        except BlacklistError as rollback_error:
+            raise BlacklistError(
+                (
+                    "nftables delete failed and "
+                    "persistent state rollback also failed: "
+                    f"nft={nft_error}; "
+                    f"rollback={rollback_error}"
+                )
+            ) from nft_error
+
+        raise
 
 
 def list_blacklist_entries() -> list[str]:
@@ -339,7 +414,7 @@ def list_blacklist_entries() -> list[str]:
     return addresses
 
 
-def list_blacklist_state(
+def _list_blacklist_state_unlocked(
     store: BlacklistStore | None = None,
 ) -> list[BlacklistEntry]:
     """Return active stored blacklist metadata."""
@@ -366,7 +441,7 @@ def list_blacklist_state(
     return active_entries
 
 
-def reconcile_blacklist(
+def _reconcile_blacklist_unlocked(
     store: BlacklistStore | None = None,
 ) -> tuple[int, int]:
     """Synchronize persistent blacklist state with nftables.
@@ -438,3 +513,82 @@ def reconcile_blacklist(
         restored_count += 1
 
     return restored_count, expired_count
+
+
+# Public blacklist operations serialized across processes.
+
+def _run_locked(operation):
+    """Run one blacklist operation under the interprocess lock."""
+
+    try:
+        with locked_blacklist_operation():
+            return operation()
+
+    except BlacklistLockError as error:
+        raise BlacklistError(
+            f"blacklist lock error: {error}"
+        ) from error
+
+
+def add_blacklist_entry(
+    address: str,
+    timeout: str,
+    reason: str = "manual",
+    source: str = "cli",
+    store: BlacklistStore | None = None,
+    protected_networks: list[str] | None = None,
+) -> None:
+    """Add IPv4 address under the blacklist operation lock."""
+
+    def operation() -> None:
+        _add_blacklist_entry_unlocked(
+            address=address,
+            timeout=timeout,
+            reason=reason,
+            source=source,
+            store=store,
+            protected_networks=protected_networks,
+        )
+
+    _run_locked(operation)
+
+
+def delete_blacklist_entry(
+    address: str,
+    store: BlacklistStore | None = None,
+) -> None:
+    """Delete IPv4 address under the blacklist operation lock."""
+
+    def operation() -> None:
+        _delete_blacklist_entry_unlocked(
+            address=address,
+            store=store,
+        )
+
+    _run_locked(operation)
+
+
+def list_blacklist_state(
+    store: BlacklistStore | None = None,
+) -> list[BlacklistEntry]:
+    """Read/clean persistent state under the operation lock."""
+
+    def operation() -> list[BlacklistEntry]:
+        return _list_blacklist_state_unlocked(
+            store=store,
+        )
+
+    return _run_locked(operation)
+
+
+def reconcile_blacklist(
+    store: BlacklistStore | None = None,
+) -> tuple[int, int]:
+    """Reconcile blacklist under the operation lock."""
+
+    def operation() -> tuple[int, int]:
+        return _reconcile_blacklist_unlocked(
+            store=store,
+        )
+
+    return _run_locked(operation)

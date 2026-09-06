@@ -3,10 +3,10 @@
 import logging
 from collections.abc import Callable
 from dataclasses import dataclass
-
 from secbox.modules.blacklist.service import (
     BlacklistError,
     add_blacklist_entry,
+    parse_timeout,
 )
 from secbox.modules.ids.policy import (
     PolicyAction,
@@ -48,6 +48,17 @@ class IdsResponseHandler:
             automatic_blackhole_enabled
         )
 
+        try:
+            parse_timeout(
+                automatic_blackhole_timeout
+            )
+
+        except BlacklistError as error:
+            raise IdsResponseError(
+                "invalid automatic blackhole timeout: "
+                f"{automatic_blackhole_timeout}: {error}"
+            ) from error
+
         self.automatic_blackhole_timeout = (
             automatic_blackhole_timeout
         )
@@ -57,6 +68,19 @@ class IdsResponseHandler:
         )
 
         self.blacklist_add = blacklist_add
+
+    def refresh_protected_networks(
+        self,
+        protected_networks: tuple[
+            str,
+            ...,
+        ],
+    ) -> None:
+        """Replace runtime protected networks."""
+
+        self.protected_networks = (
+            protected_networks
+        )
 
     def handle(
         self,

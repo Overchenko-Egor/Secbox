@@ -265,3 +265,45 @@ def test_protected_networks_are_forwarded_to_blacklist() -> None:
         "192.168.100.0/24",
         "192.168.100.2/32",
     ]
+
+
+@pytest.mark.parametrize(
+    "timeout",
+    [
+        "",
+        "0m",
+        "-1h",
+        "15x",
+        "abc",
+    ],
+)
+def test_invalid_automatic_blackhole_timeout_is_rejected(
+    timeout: str,
+) -> None:
+    """Invalid response timeout must fail during construction."""
+
+    with pytest.raises(
+        IdsResponseError,
+        match="invalid automatic blackhole timeout",
+    ):
+        IdsResponseHandler(
+            automatic_blackhole_enabled=True,
+            automatic_blackhole_timeout=timeout,
+            protected_networks=(),
+        )
+
+
+def test_valid_automatic_blackhole_timeout_is_accepted() -> None:
+    """Valid timeout is checked before the daemon starts."""
+
+    handler = IdsResponseHandler(
+        automatic_blackhole_enabled=True,
+        automatic_blackhole_timeout="15m",
+        protected_networks=(),
+    )
+
+    assert (
+        handler.automatic_blackhole_timeout
+        == "15m"
+    )
+

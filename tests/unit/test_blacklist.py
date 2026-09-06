@@ -448,3 +448,303 @@ def test_storage_error_is_exposed_as_blacklist_error(
         match="blacklist storage error",
     ):
         list_blacklist_state(store)
+
+
+
+def test_repeated_blacklist_add_refreshes_timeout(
+    monkeypatch,
+) -> None:
+    """Existing nft element is removed and added with a fresh timeout."""
+
+    from secbox.modules.blacklist.service import (
+        BlacklistError,
+        add_blacklist_entry,
+    )
+
+    commands: list[list[str]] = []
+    saved_entries = []
+    add_attempts = 0
+
+    def fake_run_nft(command):
+        nonlocal add_attempts
+
+        commands.append(command)
+
+        if command[0] == "add":
+            add_attempts += 1
+
+            if add_attempts == 1:
+                raise BlacklistError(
+                    "nftables command failed: File exists"
+                )
+
+    monkeypatch.setattr(
+        "secbox.modules.blacklist.service.run_nft",
+        fake_run_nft,
+    )
+
+    monkeypatch.setattr(
+        "secbox.modules.blacklist.service.load_store_entries",
+        lambda store: [],
+    )
+
+    monkeypatch.setattr(
+        "secbox.modules.blacklist.service.save_store_entries",
+        lambda store, entries: saved_entries.extend(entries),
+    )
+
+    add_blacklist_entry(
+        address="203.0.113.50",
+        timeout="15m",
+        reason="ids:test",
+        source="ids",
+        store=object(),
+        protected_networks=[],
+    )
+
+    assert [command[0] for command in commands] == [
+        "add",
+        "delete",
+        "add",
+    ]
+
+    assert commands[0][-1] == (
+        "{ 203.0.113.50 timeout 15m }"
+    )
+
+    assert commands[1][-1] == (
+        "{ 203.0.113.50 }"
+    )
+
+    assert commands[2][-1] == (
+        "{ 203.0.113.50 timeout 15m }"
+    )
+
+    assert len(saved_entries) == 1
+    assert saved_entries[0].address == "203.0.113.50"
+    assert saved_entries[0].reason == "ids:test"
+    assert saved_entries[0].source == "ids"
+
+
+def test_blacklist_add_does_not_hide_other_nft_errors(
+    monkeypatch,
+    tmp_path,
+) -> None:
+    """Unexpected nft errors must still propagate."""
+
+    import pytest
+
+    from secbox.modules.blacklist.service import (
+        BlacklistError,
+        add_blacklist_entry,
+    )
+
+    commands: list[list[str]] = []
+
+    def fake_run_nft(command):
+        commands.append(command)
+
+        raise BlacklistError(
+            "nftables command failed: Permission denied"
+        )
+
+    monkeypatch.setattr(
+        "secbox.modules.blacklist.service.run_nft",
+        fake_run_nft,
+    )
+
+    store = BlacklistStore(
+        tmp_path / "blacklist.json"
+    )
+
+    with pytest.raises(
+        BlacklistError,
+        match="Permission denied",
+    ):
+        add_blacklist_entry(
+            address="203.0.113.50",
+            timeout="15m",
+            store=store,
+            protected_networks=[],
+        )
+
+    assert len(commands) == 1
+    assert commands[0][0] == "add"
+
+    # Persistent state was written before nftables,
+    # but must be rolled back after the nft failure.
+    assert store.load() == []
+
+
+def test_add_store_failure_does_not_touch_nft(
+    monkeypatch,
+) -> None:
+    """nftables must not change if persistent state cannot be saved."""
+
+    commands = []
+
+    monkeypatch.setattr(
+        "secbox.modules.blacklist.service.load_store_entries",
+        lambda store: [],
+    )
+
+    def fail_save(store, entries):
+        raise BlacklistError(
+            "simulated storage failure"
+        )
+
+    monkeypatch.setattr(
+        "secbox.modules.blacklist.service.save_store_entries",
+        fail_save,
+    )
+
+    monkeypatch.setattr(
+        "secbox.modules.blacklist.service.run_nft",
+        lambda command: commands.append(command),
+    )
+
+    with pytest.raises(
+        BlacklistError,
+        match="storage failure",
+    ):
+        add_blacklist_entry(
+            address="203.0.113.70",
+            timeout="15m",
+            store=object(),
+            protected_networks=[],
+        )
+
+    assert commands == []
+
+
+def test_add_nft_failure_rolls_back_persistent_state(
+    monkeypatch,
+) -> None:
+    """Failed nft add restores previous persistent state."""
+
+    previous = BlacklistEntry(
+        address="198.51.100.10",
+        reason="existing",
+        source="test",
+        created_at=datetime.now(UTC),
+        expires_at=(
+            datetime.now(UTC)
+            + timedelta(hours=1)
+        ),
+    )
+
+    saves = []
+
+    monkeypatch.setattr(
+        "secbox.modules.blacklist.service.load_store_entries",
+        lambda store: [previous],
+    )
+
+    monkeypatch.setattr(
+        "secbox.modules.blacklist.service.save_store_entries",
+        lambda store, entries: saves.append(list(entries)),
+    )
+
+    def fail_nft(command):
+        raise BlacklistError(
+            "nftables command failed: Permission denied"
+        )
+
+    monkeypatch.setattr(
+        "secbox.modules.blacklist.service.run_nft",
+        fail_nft,
+    )
+
+    with pytest.raises(
+        BlacklistError,
+        match="Permission denied",
+    ):
+        add_blacklist_entry(
+            address="203.0.113.70",
+            timeout="15m",
+            store=object(),
+            protected_networks=[],
+        )
+
+    assert len(saves) == 2
+
+    assert {
+        entry.address
+        for entry in saves[0]
+    } == {
+        "198.51.100.10",
+        "203.0.113.70",
+    }
+
+    assert saves[1] == [
+        previous
+    ]
+
+
+def test_delete_nft_failure_rolls_back_persistent_state(
+    monkeypatch,
+) -> None:
+    """Failed nft delete restores the deleted persistent entry."""
+
+    previous = BlacklistEntry(
+        address="203.0.113.70",
+        reason="existing",
+        source="test",
+        created_at=datetime.now(UTC),
+        expires_at=(
+            datetime.now(UTC)
+            + timedelta(hours=1)
+        ),
+    )
+
+    saves = []
+
+    monkeypatch.setattr(
+        "secbox.modules.blacklist.service.load_store_entries",
+        lambda store: [previous],
+    )
+
+    monkeypatch.setattr(
+        "secbox.modules.blacklist.service.save_store_entries",
+        lambda store, entries: saves.append(list(entries)),
+    )
+
+    def fail_nft(command):
+        raise BlacklistError(
+            "nftables command failed: Permission denied"
+        )
+
+    monkeypatch.setattr(
+        "secbox.modules.blacklist.service.run_nft",
+        fail_nft,
+    )
+
+    with pytest.raises(
+        BlacklistError,
+        match="Permission denied",
+    ):
+        delete_blacklist_entry(
+            address="203.0.113.70",
+            store=object(),
+        )
+
+    assert saves[0] == []
+    assert saves[1] == [
+        previous
+    ]
+
+
+
+@pytest.fixture(autouse=True)
+def isolated_blacklist_lock(
+    monkeypatch: MonkeyPatch,
+    tmp_path: Path,
+) -> None:
+    """Exercise real locking without accessing system runtime state."""
+    from functools import partial
+    from secbox.modules.blacklist.lock import blacklist_lock
+
+    monkeypatch.setattr(
+        "secbox.modules.blacklist.service.locked_blacklist_operation",
+        partial(blacklist_lock, tmp_path / "blacklist.lock"),
+    )

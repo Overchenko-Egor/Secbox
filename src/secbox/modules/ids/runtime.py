@@ -1,5 +1,7 @@
 """Runtime construction helpers for the IDS subsystem."""
 
+from typing import TYPE_CHECKING
+
 import ipaddress
 from datetime import timedelta
 from secbox.modules.ids.response import IdsResponseHandler
@@ -13,6 +15,12 @@ from secbox.modules.ids.policy import (
 from secbox.modules.network.state import (
     NetworkInterfaceState,
 )
+
+
+if TYPE_CHECKING:
+    from secbox.modules.ids.worker import (
+        StreamingIdsWorker,
+    )
 
 
 class IdsRuntimeConfigError(Exception):
@@ -227,3 +235,30 @@ def build_ids_response_handler(
             )
         ),
     )
+
+def refresh_ids_runtime_state(
+    config: SecBoxConfig,
+    runtime_interfaces: list[
+        NetworkInterfaceState
+    ],
+    worker: "StreamingIdsWorker",
+    response_handler: IdsResponseHandler,
+) -> None:
+    """Refresh worker and response runtime state."""
+
+    protected_networks = tuple(
+        str(network)
+        for network in build_protected_networks(
+            config,
+            runtime_interfaces,
+        )
+    )
+
+    worker.refresh_runtime(
+        runtime_interfaces
+    )
+
+    response_handler.refresh_protected_networks(
+        protected_networks
+    )
+

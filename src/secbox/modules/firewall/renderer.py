@@ -53,10 +53,10 @@ def render_nftables_config(
             [
                 "",
                 (
-                    "        ip saddr @blacklist_v4 "
-                    'log prefix "SECBOX_BLACKLIST_INPUT: " '
-                    "limit rate 5/second counter drop"
+                    "        ip saddr @blacklist_v4 limit rate 5/second "
+                    'log prefix "SECBOX_BLACKLIST_INPUT: "'
                 ),
+                "        ip saddr @blacklist_v4 counter drop",
             ]
         )
 
@@ -145,10 +145,10 @@ def render_nftables_config(
             [
                 "",
                 (
-                    "        ip saddr @blacklist_v4 "
-                    'log prefix "SECBOX_BLACKLIST_FORWARD: " '
-                    "limit rate 5/second counter drop"
+                    "        ip saddr @blacklist_v4 limit rate 5/second "
+                    'log prefix "SECBOX_BLACKLIST_FORWARD: "'
                 ),
+                "        ip saddr @blacklist_v4 counter drop",
             ]
         )
 

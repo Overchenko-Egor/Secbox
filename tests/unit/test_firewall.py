@@ -180,3 +180,17 @@ def test_dynamic_blacklist_can_be_disabled(
     )
 
     assert "blacklist_v4" not in content
+
+
+def test_blacklist_drop_does_not_depend_on_log_rate(tmp_path: Path) -> None:
+    """Packets above the logging limit must still drop before established/loopback accepts."""
+    output = render_nftables_config(make_firewall(), tmp_path / "firewall.nft")
+    content = output.read_text()
+    for name in ("input", "forward"):
+        chain = content.split(f"chain {name} {{", 1)[1].split("    }", 1)[0]
+        drop_rule = "ip saddr @blacklist_v4 counter drop"
+        assert drop_rule in chain
+        assert chain.index(drop_rule) < chain.index("ct state established,related accept")
+        log_rule = next(line for line in chain.splitlines() if "log prefix" in line and "BLACKLIST" in line)
+        assert log_rule.index("limit rate") < log_rule.index("log prefix")
+        assert "drop" not in log_rule
