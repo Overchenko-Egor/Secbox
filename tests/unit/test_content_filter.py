@@ -371,20 +371,33 @@ def test_doh_resolver_addresses_must_be_unique() -> None:
         )
 
 
-def test_doh_manual_and_managed_addresses_must_not_overlap(
-) -> None:
-    with pytest.raises(
-        ValidationError,
-        match="cannot be both manual and managed",
-    ):
-        DohFilterConfig(
-            resolver_addresses=["1.1.1.1"],
-            managed_addresses=["1.1.1.1"],
-        )
-
-
 def test_doh_managed_feed_is_disabled_by_default() -> None:
     config = DohFilterConfig()
 
     assert config.managed_feed_enabled is False
-    assert config.managed_addresses == []
+
+
+def test_managed_feed_url_accepts_https() -> None:
+    config = DohFilterConfig(
+        managed_feed_url=(
+            "https://example.test/doh.txt"
+        )
+    )
+
+    assert config.managed_feed_url == (
+        "https://example.test/doh.txt"
+    )
+
+
+def test_managed_feed_url_rejects_http() -> None:
+    import pytest
+
+    with pytest.raises(
+        ValueError,
+        match="must use HTTPS",
+    ):
+        DohFilterConfig(
+            managed_feed_url=(
+                "http://example.test/doh.txt"
+            )
+        )

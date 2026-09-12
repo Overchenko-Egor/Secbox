@@ -6,6 +6,13 @@ from tempfile import TemporaryDirectory
 from pydantic import BaseModel
 
 from secbox.core.models import SecBoxConfig
+from secbox.modules.content_filter.doh_feed.resolver import (
+    resolve_effective_doh_addresses,
+)
+from secbox.modules.content_filter.doh_feed.store import (
+    DohFeedStore,
+    DohFeedStoreError,
+)
 from secbox.modules.content_filter.validator import validate_content_filter_config
 from secbox.modules.dhcp.renderer import render_dnsmasq_config
 from secbox.modules.dhcp.validator import validate_dhcp_preflight
@@ -21,6 +28,28 @@ class ConfigPreview(BaseModel):
     applied: bool = False
     files: dict[str, str]
     notes: list[str]
+
+
+
+def _load_doh_managed_state(config):
+    """Load managed DoH state for firewall preview."""
+
+    content_filter = config.content_filter
+
+    if (
+        content_filter is None
+        or not content_filter.enabled
+        or not content_filter.encrypted_dns.doh.enabled
+        or not content_filter.encrypted_dns.doh.managed_feed_enabled
+    ):
+        return None
+
+    try:
+        return DohFeedStore().load()
+    except DohFeedStoreError as error:
+        raise RuntimeError(
+            f"failed to load managed DoH state: {error}"
+        ) from error
 
 
 def preview_config(config: SecBoxConfig, interfaces: list[NetworkInterfaceState]) -> ConfigPreview:
@@ -68,21 +97,16 @@ def preview_config(config: SecBoxConfig, interfaces: list[NetworkInterfaceState]
                     and config.content_filter.enabled
                     and config.content_filter.encrypted_dns.block_doq
                 ),
+                enable_doh_set=(
+                    config.content_filter is not None
+                    and config.content_filter.enabled
+                    and config.content_filter.encrypted_dns.doh.enabled
+                ),
                 doh_resolver_addresses=(
-                    (
-                        config.content_filter.encrypted_dns.doh.resolver_addresses
-                        + (
-                            config.content_filter.encrypted_dns.doh.managed_addresses
-                            if config.content_filter.encrypted_dns.doh.managed_feed_enabled
-                            else []
-                        )
+                    resolve_effective_doh_addresses(
+                        config.content_filter,
+                        _load_doh_managed_state(config),
                     )
-                    if (
-                        config.content_filter is not None
-                        and config.content_filter.enabled
-                        and config.content_filter.encrypted_dns.doh.enabled
-                    )
-                    else []
                 ),
             )
             files[path.name] = path.read_text(encoding="utf-8")

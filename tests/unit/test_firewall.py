@@ -511,3 +511,34 @@ def test_empty_doh_resolver_list_creates_no_rules(
     )
 
     assert "doh_resolvers_v4" not in content
+
+
+def test_enabled_doh_set_exists_when_empty(
+    tmp_path: Path,
+) -> None:
+    output = render_nftables_config(
+        make_firewall(),
+        tmp_path / "firewall.nft",
+        enable_doh_set=True,
+        doh_resolver_addresses=[],
+    )
+
+    content = output.read_text(
+        encoding="utf-8",
+    )
+
+    assert "set doh_resolvers_v4 {" in content
+
+    assert (
+        'ip daddr @doh_resolvers_v4 '
+        'tcp dport 443 counter drop'
+        in content
+    )
+
+    assert (
+        'ip daddr @doh_resolvers_v4 '
+        'udp dport 443 counter drop'
+        in content
+    )
+
+    assert "elements = {" not in content

@@ -2,6 +2,7 @@
 
 from ipaddress import IPv4Address
 from typing import Literal
+from urllib.parse import urlparse
 
 from pydantic import (
     BaseModel,
@@ -166,14 +167,47 @@ class DohFilterConfig(BaseModel):
 
     managed_feed_enabled: bool = False
 
-    managed_addresses: list[IPv4Address] = Field(
-        default_factory=list
-    )
+    managed_feed_url: str | None = None
+    managed_feed_timeout_seconds: int = Field(default=10, ge=1, le=60)
+    managed_feed_max_bytes: int = Field(default=1048576, ge=1024, le=10485760)
+    managed_feed_min_addresses: int = Field(default=1, ge=1)
+    managed_feed_max_addresses: int = Field(default=10000, ge=1)
 
-    @field_validator(
-        "resolver_addresses",
-        "managed_addresses",
-    )
+    @field_validator("managed_feed_url")
+    @classmethod
+    def validate_managed_feed_url(
+        cls,
+        value: str | None,
+    ) -> str | None:
+        if value is None:
+            return None
+
+        parsed = urlparse(value)
+
+        if (
+            parsed.scheme != "https"
+            or not parsed.hostname
+        ):
+            raise ValueError(
+                "managed DoH feed URL must use HTTPS"
+            )
+
+        return value
+
+    @model_validator(mode="after")
+    def validate_managed_feed_limits(self):
+        if (
+            self.managed_feed_min_addresses
+            > self.managed_feed_max_addresses
+        ):
+            raise ValueError(
+                "managed DoH feed minimum address count "
+                "must not exceed maximum address count"
+            )
+
+        return self
+
+    @field_validator("resolver_addresses")
     @classmethod
     def validate_resolver_addresses(
         cls,
@@ -186,30 +220,7 @@ class DohFilterConfig(BaseModel):
 
         return value
 
-    @model_validator(mode="after")
-    def validate_address_conflicts(
-        self,
-    ) -> "DohFilterConfig":
-        conflicts = (
-            set(self.resolver_addresses)
-            & set(self.managed_addresses)
-        )
 
-        if conflicts:
-            joined = ", ".join(
-                str(address)
-                for address in sorted(
-                    conflicts,
-                    key=int,
-                )
-            )
-
-            raise ValueError(
-                "DoH resolver addresses cannot be both "
-                f"manual and managed: {joined}"
-            )
-
-        return self
 
 
 class EncryptedDnsFilterConfig(BaseModel):

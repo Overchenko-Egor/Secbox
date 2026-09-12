@@ -5,6 +5,18 @@ from typing import NoReturn, Any
 
 import typer
 import yaml
+from secbox.modules.content_filter.doh_feed.resolver import (
+    resolve_effective_doh_addresses,
+)
+from secbox.modules.content_filter.doh_feed.store import (
+    DohFeedStore,
+    DohFeedStoreError,
+)
+from secbox.modules.content_filter.doh_feed.service import (
+    DohFeedServiceError,
+    reconcile_managed_resolvers,
+    refresh_managed_resolvers,
+)
 from secbox.modules.network.models import NetworkConfig
 from pydantic import ValidationError
 from rich.console import Console
@@ -117,6 +129,28 @@ from secbox.modules.ids.response import (
 )
 
 
+
+def _load_doh_managed_state(config):
+    """Load managed DoH state when the feed is enabled."""
+
+    content_filter = config.content_filter
+
+    if (
+        content_filter is None
+        or not content_filter.enabled
+        or not content_filter.encrypted_dns.doh.enabled
+        or not content_filter.encrypted_dns.doh.managed_feed_enabled
+    ):
+        return None
+
+    try:
+        return DohFeedStore().load()
+    except DohFeedStoreError as error:
+        raise RuntimeError(
+            f"failed to load managed DoH state: {error}"
+        ) from error
+
+
 app = typer.Typer(
     name="secboxctl",
     help="SecBox management utility.",
@@ -157,6 +191,16 @@ ids_app = typer.Typer(
     help="Suricata IDS analysis commands."
 )
 
+content_filter_app = typer.Typer(
+    help="Manage SecBox content filtering.",
+    no_args_is_help=True,
+)
+
+doh_feed_app = typer.Typer(
+    help="Manage the managed DoH resolver feed.",
+    no_args_is_help=True,
+)
+
 app.add_typer(firewall_app, name="firewall")
 app.add_typer(network_app, name="network")
 app.add_typer(config_app, name="config")
@@ -164,6 +208,15 @@ app.add_typer(dhcp_app, name="dhcp")
 app.add_typer(blacklist_app, name="blacklist",)
 app.add_typer(ids_app, name="ids",)
 app.add_typer(web_app, name="web")
+
+content_filter_app.add_typer(
+    doh_feed_app,
+    name="doh-feed",
+)
+app.add_typer(
+    content_filter_app,
+    name="content-filter",
+)
 
 
 console = Console()
@@ -654,21 +707,21 @@ def firewall_render(
             and config.content_filter.encrypted_dns.block_doq
         )
 
+        doh_managed_state = (
+            _load_doh_managed_state(config)
+        )
+
         doh_resolver_addresses = (
-            (
-                config.content_filter.encrypted_dns.doh.resolver_addresses
-                + (
-                    config.content_filter.encrypted_dns.doh.managed_addresses
-                    if config.content_filter.encrypted_dns.doh.managed_feed_enabled
-                    else []
-                )
+            resolve_effective_doh_addresses(
+                config.content_filter,
+                doh_managed_state,
             )
-            if (
-                config.content_filter is not None
-                and config.content_filter.enabled
-                and config.content_filter.encrypted_dns.doh.enabled
-            )
-            else []
+        )
+
+        enable_doh_set = (
+            config.content_filter is not None
+            and config.content_filter.enabled
+            and config.content_filter.encrypted_dns.doh.enabled
         )
 
         rendered = render_nftables_config(
@@ -677,6 +730,7 @@ def firewall_render(
             enforce_lan_dns=dns_enforcement,
             block_dot=block_dot,
             block_doq=block_doq,
+            enable_doh_set=enable_doh_set,
             doh_resolver_addresses=doh_resolver_addresses,
         )
 
@@ -732,21 +786,21 @@ def firewall_apply() -> None:
             and config.content_filter.encrypted_dns.block_doq
         )
 
+        doh_managed_state = (
+            _load_doh_managed_state(config)
+        )
+
         doh_resolver_addresses = (
-            (
-                config.content_filter.encrypted_dns.doh.resolver_addresses
-                + (
-                    config.content_filter.encrypted_dns.doh.managed_addresses
-                    if config.content_filter.encrypted_dns.doh.managed_feed_enabled
-                    else []
-                )
+            resolve_effective_doh_addresses(
+                config.content_filter,
+                doh_managed_state,
             )
-            if (
-                config.content_filter is not None
-                and config.content_filter.enabled
-                and config.content_filter.encrypted_dns.doh.enabled
-            )
-            else []
+        )
+
+        enable_doh_set = (
+            config.content_filter is not None
+            and config.content_filter.enabled
+            and config.content_filter.encrypted_dns.doh.enabled
         )
 
         render_nftables_config(
@@ -755,6 +809,7 @@ def firewall_apply() -> None:
             enforce_lan_dns=dns_enforcement,
             block_dot=block_dot,
             block_doq=block_doq,
+            enable_doh_set=enable_doh_set,
             doh_resolver_addresses=doh_resolver_addresses,
         )
 
@@ -795,6 +850,180 @@ def firewall_apply() -> None:
     console.print(
         "[green]Firewall configuration applied successfully.[/green]"
     )
+
+
+
+
+@doh_feed_app.command("update")
+def doh_feed_update() -> None:
+    """Download and apply the managed DoH resolver feed."""
+
+    try:
+        config = _store().load()
+    except ConfigStoreError as error:
+        _fail(str(error))
+
+    content_filter = config.content_filter
+
+    if content_filter is None:
+        _fail("content filter configuration is not present")
+
+    try:
+        state = refresh_managed_resolvers(
+            content_filter=content_filter,
+        )
+    except DohFeedServiceError as error:
+        _fail(str(error))
+
+    console.print(
+        "[green]Managed DoH feed updated.[/green]"
+    )
+    console.print(
+        f"Managed addresses: {len(state.addresses)}"
+    )
+
+    if state.updated_at is not None:
+        console.print(
+            f"Updated at: {state.updated_at.isoformat()}"
+        )
+
+
+
+@doh_feed_app.command("reconcile")
+def doh_feed_reconcile() -> None:
+    """Restore the effective DoH resolver nftables set."""
+
+    try:
+        config = _store().load()
+    except ConfigStoreError as error:
+        _fail(str(error))
+
+    content_filter = config.content_filter
+
+    if content_filter is None:
+        _fail("content filter configuration is not present")
+
+    try:
+        state = reconcile_managed_resolvers(
+            content_filter=content_filter,
+        )
+    except DohFeedServiceError as error:
+        _fail(str(error))
+
+    effective_addresses = (
+        resolve_effective_doh_addresses(
+            content_filter,
+            state,
+        )
+    )
+
+    console.print(
+        "[green]Managed DoH state reconciled.[/green]"
+    )
+    console.print(
+        f"Managed addresses: {len(state.addresses)}"
+    )
+    console.print(
+        f"Effective addresses: "
+        f"{len(effective_addresses)}"
+    )
+
+
+@doh_feed_app.command("status")
+def doh_feed_status() -> None:
+    """Display managed DoH feed status."""
+
+    try:
+        config = _store().load()
+    except ConfigStoreError as error:
+        _fail(str(error))
+
+    content_filter = config.content_filter
+
+    if content_filter is None:
+        _fail("content filter configuration is not present")
+
+    doh = content_filter.encrypted_dns.doh
+
+    try:
+        managed_state = DohFeedStore().load()
+    except DohFeedStoreError as error:
+        _fail(
+            f"failed to load managed DoH state: {error}"
+        )
+
+    effective_addresses = resolve_effective_doh_addresses(
+        content_filter,
+        (
+            managed_state
+            if doh.managed_feed_enabled
+            else None
+        ),
+    )
+
+    table = Table(
+        title="Managed DoH Feed Status"
+    )
+
+    table.add_column("Property")
+    table.add_column("Value")
+
+    table.add_row(
+        "Content filter",
+        "enabled" if content_filter.enabled else "disabled",
+    )
+    table.add_row(
+        "DoH filtering",
+        "enabled" if doh.enabled else "disabled",
+    )
+    table.add_row(
+        "Managed feed",
+        "enabled" if doh.managed_feed_enabled else "disabled",
+    )
+    table.add_row(
+        "Feed URL",
+        doh.managed_feed_url or "-",
+    )
+    table.add_row(
+        "Last update",
+        (
+            managed_state.updated_at.isoformat()
+            if managed_state.updated_at is not None
+            else "-"
+        ),
+    )
+    table.add_row(
+        "Manual addresses",
+        (
+            ", ".join(
+                str(address)
+                for address in doh.resolver_addresses
+            )
+            or "-"
+        ),
+    )
+    table.add_row(
+        "Managed addresses",
+        (
+            ", ".join(
+                str(address)
+                for address in managed_state.addresses
+            )
+            or "-"
+        ),
+    )
+    table.add_row(
+        "Effective addresses",
+        (
+            ", ".join(
+                str(address)
+                for address in effective_addresses
+            )
+            or "-"
+        ),
+    )
+
+    console.print(table)
 
 
 @blacklist_app.command("add")

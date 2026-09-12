@@ -17,6 +17,7 @@ def render_nftables_config(
     enforce_lan_dns: bool = False,
     block_dot: bool = False,
     block_doq: bool = False,
+    enable_doh_set: bool = False,
     doh_resolver_addresses: list[IPv4Address] | None = None,
 ) -> Path:
     """Render nftables ruleset without applying it."""
@@ -46,20 +47,29 @@ def render_nftables_config(
             ]
         )
 
-    if doh_resolver_addresses:
-        addresses = ", ".join(
-            str(address)
-            for address in sorted(
-                set(doh_resolver_addresses),
-                key=int,
-            )
-        )
-
+    if enable_doh_set or doh_resolver_addresses:
         lines.extend(
             [
                 "    set doh_resolvers_v4 {",
                 "        type ipv4_addr;",
-                f"        elements = {{ {addresses} }};",
+            ]
+        )
+
+        if doh_resolver_addresses:
+            addresses = ", ".join(
+                str(address)
+                for address in sorted(
+                    set(doh_resolver_addresses),
+                    key=int,
+                )
+            )
+
+            lines.append(
+                f"        elements = {{ {addresses} }};"
+            )
+
+        lines.extend(
+            [
                 "    }",
                 "",
             ]
@@ -229,7 +239,7 @@ def render_nftables_config(
             ]
         )
 
-    if doh_resolver_addresses:
+    if enable_doh_set or doh_resolver_addresses:
         lines.extend(
             [
                 "",
