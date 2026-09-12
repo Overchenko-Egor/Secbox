@@ -1,5 +1,6 @@
 """Render nftables configuration for SecBox."""
 
+from ipaddress import IPv4Address
 from pathlib import Path
 
 from secbox.modules.firewall.models import FirewallConfig
@@ -14,6 +15,9 @@ def render_nftables_config(
     output_path: Path,
     *,
     enforce_lan_dns: bool = False,
+    block_dot: bool = False,
+    block_doq: bool = False,
+    doh_resolver_addresses: list[IPv4Address] | None = None,
 ) -> Path:
     """Render nftables ruleset without applying it."""
 
@@ -37,6 +41,25 @@ def render_nftables_config(
                 "        type ipv4_addr;",
                 "        flags timeout;",
                 f"        timeout {config.dynamic_blacklist_timeout};",
+                "    }",
+                "",
+            ]
+        )
+
+    if doh_resolver_addresses:
+        addresses = ", ".join(
+            str(address)
+            for address in sorted(
+                set(doh_resolver_addresses),
+                key=int,
+            )
+        )
+
+        lines.extend(
+            [
+                "    set doh_resolvers_v4 {",
+                "        type ipv4_addr;",
+                f"        elements = {{ {addresses} }};",
                 "    }",
                 "",
             ]
@@ -181,13 +204,44 @@ def render_nftables_config(
                     f'        iifname "{config.lan_interface}" '
                     'tcp dport 53 counter drop'
                 ),
+            ]
+        )
+
+    if block_doq:
+        lines.extend(
+            [
+                "",
                 (
                     f'        iifname "{config.lan_interface}" '
                     'udp dport 853 counter drop'
                 ),
+            ]
+        )
+
+    if block_dot:
+        lines.extend(
+            [
+                "",
                 (
                     f'        iifname "{config.lan_interface}" '
                     'tcp dport 853 counter drop'
+                ),
+            ]
+        )
+
+    if doh_resolver_addresses:
+        lines.extend(
+            [
+                "",
+                (
+                    f'        iifname "{config.lan_interface}" '
+                    'ip daddr @doh_resolvers_v4 '
+                    'tcp dport 443 counter drop'
+                ),
+                (
+                    f'        iifname "{config.lan_interface}" '
+                    'ip daddr @doh_resolvers_v4 '
+                    'udp dport 443 counter drop'
                 ),
             ]
         )

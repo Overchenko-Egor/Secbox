@@ -642,10 +642,42 @@ def firewall_render(
             and config.content_filter.dns.enabled
         )
 
+        block_dot = (
+            config.content_filter is not None
+            and config.content_filter.enabled
+            and config.content_filter.encrypted_dns.block_dot
+        )
+
+        block_doq = (
+            config.content_filter is not None
+            and config.content_filter.enabled
+            and config.content_filter.encrypted_dns.block_doq
+        )
+
+        doh_resolver_addresses = (
+            (
+                config.content_filter.encrypted_dns.doh.resolver_addresses
+                + (
+                    config.content_filter.encrypted_dns.doh.managed_addresses
+                    if config.content_filter.encrypted_dns.doh.managed_feed_enabled
+                    else []
+                )
+            )
+            if (
+                config.content_filter is not None
+                and config.content_filter.enabled
+                and config.content_filter.encrypted_dns.doh.enabled
+            )
+            else []
+        )
+
         rendered = render_nftables_config(
             config.firewall,
             output_path,
             enforce_lan_dns=dns_enforcement,
+            block_dot=block_dot,
+            block_doq=block_doq,
+            doh_resolver_addresses=doh_resolver_addresses,
         )
 
     except (
@@ -688,10 +720,42 @@ def firewall_apply() -> None:
             and config.content_filter.dns.enabled
         )
 
+        block_dot = (
+            config.content_filter is not None
+            and config.content_filter.enabled
+            and config.content_filter.encrypted_dns.block_dot
+        )
+
+        block_doq = (
+            config.content_filter is not None
+            and config.content_filter.enabled
+            and config.content_filter.encrypted_dns.block_doq
+        )
+
+        doh_resolver_addresses = (
+            (
+                config.content_filter.encrypted_dns.doh.resolver_addresses
+                + (
+                    config.content_filter.encrypted_dns.doh.managed_addresses
+                    if config.content_filter.encrypted_dns.doh.managed_feed_enabled
+                    else []
+                )
+            )
+            if (
+                config.content_filter is not None
+                and config.content_filter.enabled
+                and config.content_filter.encrypted_dns.doh.enabled
+            )
+            else []
+        )
+
         render_nftables_config(
             config.firewall,
             rendered_file,
             enforce_lan_dns=dns_enforcement,
+            block_dot=block_dot,
+            block_doq=block_doq,
+            doh_resolver_addresses=doh_resolver_addresses,
         )
 
         apply_firewall_config(

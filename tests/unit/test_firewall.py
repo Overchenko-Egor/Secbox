@@ -338,7 +338,8 @@ def test_encrypted_dns_bypass_is_blocked(
     output = render_nftables_config(
         make_firewall(),
         tmp_path / "firewall.nft",
-        enforce_lan_dns=True,
+        block_dot=True,
+        block_doq=True,
     )
 
     content = output.read_text(
@@ -377,3 +378,136 @@ def test_encrypted_dns_bypass_is_blocked(
     assert chain.index(tcp_rule) < chain.index(
         established_rule
     )
+
+
+
+def test_dot_can_be_enabled_independently(
+    tmp_path: Path,
+) -> None:
+    output = render_nftables_config(
+        make_firewall(),
+        tmp_path / "firewall.nft",
+        block_dot=True,
+        block_doq=False,
+    )
+
+    content = output.read_text(
+        encoding="utf-8",
+    )
+
+    assert (
+        'iifname "ens36" '
+        'tcp dport 853 counter drop'
+        in content
+    )
+
+    assert (
+        'iifname "ens36" '
+        'udp dport 853 counter drop'
+        not in content
+    )
+
+
+def test_doq_can_be_enabled_independently(
+    tmp_path: Path,
+) -> None:
+    output = render_nftables_config(
+        make_firewall(),
+        tmp_path / "firewall.nft",
+        block_dot=False,
+        block_doq=True,
+    )
+
+    content = output.read_text(
+        encoding="utf-8",
+    )
+
+    assert (
+        'iifname "ens36" '
+        'udp dport 853 counter drop'
+        in content
+    )
+
+    assert (
+        'iifname "ens36" '
+        'tcp dport 853 counter drop'
+        not in content
+    )
+
+
+def test_doh_resolver_https_is_blocked(
+    tmp_path: Path,
+) -> None:
+    from ipaddress import IPv4Address
+
+    output = render_nftables_config(
+        make_firewall(),
+        tmp_path / "firewall.nft",
+        doh_resolver_addresses=[
+            IPv4Address("1.1.1.1"),
+            IPv4Address("8.8.8.8"),
+        ],
+    )
+
+    content = output.read_text(
+        encoding="utf-8",
+    )
+
+    assert "set doh_resolvers_v4 {" in content
+    assert "type ipv4_addr;" in content
+
+    assert (
+        "elements = { 1.1.1.1, 8.8.8.8 };"
+        in content
+    )
+
+    chain = content.split(
+        "chain forward {",
+        1,
+    )[1].split(
+        "    }",
+        1,
+    )[0]
+
+    tcp_rule = (
+        'iifname "ens36" '
+        'ip daddr @doh_resolvers_v4 '
+        'tcp dport 443 counter drop'
+    )
+
+    udp_rule = (
+        'iifname "ens36" '
+        'ip daddr @doh_resolvers_v4 '
+        'udp dport 443 counter drop'
+    )
+
+    established_rule = (
+        "ct state established,related accept"
+    )
+
+    assert tcp_rule in chain
+    assert udp_rule in chain
+
+    assert chain.index(tcp_rule) < chain.index(
+        established_rule
+    )
+
+    assert chain.index(udp_rule) < chain.index(
+        established_rule
+    )
+
+
+def test_empty_doh_resolver_list_creates_no_rules(
+    tmp_path: Path,
+) -> None:
+    output = render_nftables_config(
+        make_firewall(),
+        tmp_path / "firewall.nft",
+        doh_resolver_addresses=[],
+    )
+
+    content = output.read_text(
+        encoding="utf-8",
+    )
+
+    assert "doh_resolvers_v4" not in content

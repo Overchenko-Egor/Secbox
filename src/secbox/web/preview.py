@@ -58,6 +58,32 @@ def preview_config(config: SecBoxConfig, interfaces: list[NetworkInterfaceState]
                 config.firewall,
                 root / "nftables.conf",
                 enforce_lan_dns=dns_enabled,
+                block_dot=(
+                    config.content_filter is not None
+                    and config.content_filter.enabled
+                    and config.content_filter.encrypted_dns.block_dot
+                ),
+                block_doq=(
+                    config.content_filter is not None
+                    and config.content_filter.enabled
+                    and config.content_filter.encrypted_dns.block_doq
+                ),
+                doh_resolver_addresses=(
+                    (
+                        config.content_filter.encrypted_dns.doh.resolver_addresses
+                        + (
+                            config.content_filter.encrypted_dns.doh.managed_addresses
+                            if config.content_filter.encrypted_dns.doh.managed_feed_enabled
+                            else []
+                        )
+                    )
+                    if (
+                        config.content_filter is not None
+                        and config.content_filter.enabled
+                        and config.content_filter.encrypted_dns.doh.enabled
+                    )
+                    else []
+                ),
             )
             files[path.name] = path.read_text(encoding="utf-8")
         else:

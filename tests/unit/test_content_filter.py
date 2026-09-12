@@ -7,6 +7,7 @@ from secbox.modules.content_filter.models import (
     ContentFilterConfig,
     ContentFilterPolicyConfig,
     DnsFilterConfig,
+    DohFilterConfig,
 )
 from secbox.modules.dhcp.models import DhcpServerConfig
 from secbox.modules.dhcp.renderer import render_dnsmasq_config
@@ -320,3 +321,70 @@ def test_content_filter_address_must_match_lan() -> None:
         match="must match the LAN interface address",
     ):
         validate_content_filter_config(config)
+
+
+def test_encrypted_dns_defaults_are_enabled() -> None:
+    config = ContentFilterConfig(
+        enabled=True,
+        dns=DnsFilterConfig(
+            enabled=True,
+            listen_interface="ens36",
+            listen_address="192.168.50.1",
+            upstream_servers=["1.1.1.1"],
+        ),
+    )
+
+    assert config.encrypted_dns.block_dot is True
+    assert config.encrypted_dns.block_doq is True
+    assert config.encrypted_dns.doh.enabled is True
+    assert config.encrypted_dns.doh.resolver_addresses == []
+
+
+def test_doh_resolver_addresses_are_accepted() -> None:
+    config = DohFilterConfig(
+        enabled=True,
+        resolver_addresses=[
+            "1.1.1.1",
+            "8.8.8.8",
+        ],
+    )
+
+    assert [
+        str(address)
+        for address in config.resolver_addresses
+    ] == [
+        "1.1.1.1",
+        "8.8.8.8",
+    ]
+
+
+def test_doh_resolver_addresses_must_be_unique() -> None:
+    with pytest.raises(
+        ValidationError,
+        match="DoH resolver addresses must be unique",
+    ):
+        DohFilterConfig(
+            resolver_addresses=[
+                "1.1.1.1",
+                "1.1.1.1",
+            ],
+        )
+
+
+def test_doh_manual_and_managed_addresses_must_not_overlap(
+) -> None:
+    with pytest.raises(
+        ValidationError,
+        match="cannot be both manual and managed",
+    ):
+        DohFilterConfig(
+            resolver_addresses=["1.1.1.1"],
+            managed_addresses=["1.1.1.1"],
+        )
+
+
+def test_doh_managed_feed_is_disabled_by_default() -> None:
+    config = DohFilterConfig()
+
+    assert config.managed_feed_enabled is False
+    assert config.managed_addresses == []

@@ -153,6 +153,79 @@ class ContentFilterPolicyConfig(BaseModel):
         return self
 
 
+class DohFilterConfig(BaseModel):
+    """DNS-over-HTTPS filtering configuration."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    enabled: bool = True
+
+    resolver_addresses: list[IPv4Address] = Field(
+        default_factory=list
+    )
+
+    managed_feed_enabled: bool = False
+
+    managed_addresses: list[IPv4Address] = Field(
+        default_factory=list
+    )
+
+    @field_validator(
+        "resolver_addresses",
+        "managed_addresses",
+    )
+    @classmethod
+    def validate_resolver_addresses(
+        cls,
+        value: list[IPv4Address],
+    ) -> list[IPv4Address]:
+        if len(set(value)) != len(value):
+            raise ValueError(
+                "DoH resolver addresses must be unique"
+            )
+
+        return value
+
+    @model_validator(mode="after")
+    def validate_address_conflicts(
+        self,
+    ) -> "DohFilterConfig":
+        conflicts = (
+            set(self.resolver_addresses)
+            & set(self.managed_addresses)
+        )
+
+        if conflicts:
+            joined = ", ".join(
+                str(address)
+                for address in sorted(
+                    conflicts,
+                    key=int,
+                )
+            )
+
+            raise ValueError(
+                "DoH resolver addresses cannot be both "
+                f"manual and managed: {joined}"
+            )
+
+        return self
+
+
+class EncryptedDnsFilterConfig(BaseModel):
+    """Encrypted DNS filtering configuration."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    block_dot: bool = True
+    block_doq: bool = True
+
+    doh: DohFilterConfig = Field(
+        default_factory=DohFilterConfig,
+    )
+
+
+
 class ContentFilterLoggingConfig(BaseModel):
     """Content-filter logging settings."""
 
@@ -172,6 +245,10 @@ class ContentFilterConfig(BaseModel):
 
     policy: ContentFilterPolicyConfig = Field(
         default_factory=ContentFilterPolicyConfig,
+    )
+
+    encrypted_dns: EncryptedDnsFilterConfig = Field(
+        default_factory=EncryptedDnsFilterConfig,
     )
 
     logging: ContentFilterLoggingConfig = Field(
