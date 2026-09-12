@@ -181,6 +181,14 @@ def render_nftables_config(
                     f'        iifname "{config.lan_interface}" '
                     'tcp dport 53 counter drop'
                 ),
+                (
+                    f'        iifname "{config.lan_interface}" '
+                    'udp dport 853 counter drop'
+                ),
+                (
+                    f'        iifname "{config.lan_interface}" '
+                    'tcp dport 853 counter drop'
+                ),
             ]
         )
 

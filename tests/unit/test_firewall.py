@@ -276,6 +276,18 @@ def test_dns_bypass_enforcement_is_disabled_by_default(
         not in content
     )
 
+    assert (
+        'iifname "ens36" '
+        'udp dport 853 counter drop'
+        not in content
+    )
+
+    assert (
+        'iifname "ens36" '
+        'tcp dport 853 counter drop'
+        not in content
+    )
+
 
 def test_secbox_dns_is_allowed_from_lan(
     tmp_path: Path,
@@ -317,4 +329,51 @@ def test_secbox_dns_is_allowed_from_lan(
 
     assert chain.index(tcp_rule) < chain.index(
         'log prefix "SECBOX_INPUT_DROP: "'
+    )
+
+
+def test_encrypted_dns_bypass_is_blocked(
+    tmp_path: Path,
+) -> None:
+    output = render_nftables_config(
+        make_firewall(),
+        tmp_path / "firewall.nft",
+        enforce_lan_dns=True,
+    )
+
+    content = output.read_text(
+        encoding="utf-8",
+    )
+
+    chain = content.split(
+        "chain forward {",
+        1,
+    )[1].split(
+        "    }",
+        1,
+    )[0]
+
+    udp_rule = (
+        'iifname "ens36" '
+        'udp dport 853 counter drop'
+    )
+
+    tcp_rule = (
+        'iifname "ens36" '
+        'tcp dport 853 counter drop'
+    )
+
+    established_rule = (
+        "ct state established,related accept"
+    )
+
+    assert udp_rule in chain
+    assert tcp_rule in chain
+
+    assert chain.index(udp_rule) < chain.index(
+        established_rule
+    )
+
+    assert chain.index(tcp_rule) < chain.index(
+        established_rule
     )
