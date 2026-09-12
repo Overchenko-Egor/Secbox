@@ -12,6 +12,8 @@ class FirewallRenderError(Exception):
 def render_nftables_config(
     config: FirewallConfig,
     output_path: Path,
+    *,
+    enforce_lan_dns: bool = False,
 ) -> Path:
     """Render nftables ruleset without applying it."""
 
@@ -117,6 +119,21 @@ def render_nftables_config(
             ]
         )
 
+    if enforce_lan_dns:
+        lines.extend(
+            [
+                "",
+                (
+                    f'        iifname "{config.lan_interface}" '
+                    'udp dport 53 counter accept'
+                ),
+                (
+                    f'        iifname "{config.lan_interface}" '
+                    'tcp dport 53 counter accept'
+                ),
+            ]
+        )
+
     if config.log_dropped_input and config.input_policy == "drop":
         lines.extend(
             [
@@ -149,6 +166,21 @@ def render_nftables_config(
                     'log prefix "SECBOX_BLACKLIST_FORWARD: "'
                 ),
                 "        ip saddr @blacklist_v4 counter drop",
+            ]
+        )
+
+    if enforce_lan_dns:
+        lines.extend(
+            [
+                "",
+                (
+                    f'        iifname "{config.lan_interface}" '
+                    'udp dport 53 counter drop'
+                ),
+                (
+                    f'        iifname "{config.lan_interface}" '
+                    'tcp dport 53 counter drop'
+                ),
             ]
         )
 

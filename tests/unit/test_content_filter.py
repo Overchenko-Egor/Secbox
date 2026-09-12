@@ -1,0 +1,322 @@
+from pathlib import Path
+
+import pytest
+from pydantic import ValidationError
+
+from secbox.modules.content_filter.models import (
+    ContentFilterConfig,
+    ContentFilterPolicyConfig,
+    DnsFilterConfig,
+)
+from secbox.modules.dhcp.models import DhcpServerConfig
+from secbox.modules.dhcp.renderer import render_dnsmasq_config
+from secbox.core.models import SecBoxConfig
+from secbox.modules.content_filter.validator import (
+    ContentFilterValidationError,
+    validate_content_filter_config,
+)
+from secbox.modules.firewall.models import FirewallConfig
+from secbox.modules.network.models import (
+    NetworkConfig,
+    NetworkInterfaceConfig,
+)
+
+
+def make_dhcp() -> DhcpServerConfig:
+    return DhcpServerConfig(
+        enabled=True,
+        interface="ens36",
+        network="192.168.50.0/24",
+        range_start="192.168.50.100",
+        range_end="192.168.50.200",
+        gateway="192.168.50.1",
+        dns_servers=["192.168.1.1"],
+        lease_time="12h",
+    )
+
+
+def make_filter(
+    *,
+    enabled: bool = True,
+    blocked_domains: list[str] | None = None,
+) -> ContentFilterConfig:
+    return ContentFilterConfig(
+        enabled=enabled,
+        dns=DnsFilterConfig(
+            enabled=True,
+            listen_interface="ens36",
+            listen_address="192.168.50.1",
+            upstream_servers=["1.1.1.1", "8.8.8.8"],
+        ),
+        policy=ContentFilterPolicyConfig(
+            blocked_domains=blocked_domains or [],
+        ),
+    )
+
+
+def test_disabled_filter_keeps_dns_disabled(
+    tmp_path: Path,
+) -> None:
+    path = render_dnsmasq_config(
+        [make_dhcp()],
+        tmp_path / "dnsmasq.conf",
+        content_filter=make_filter(enabled=False),
+    )
+
+    text = path.read_text()
+
+    assert "port=0" in text
+    assert "server=1.1.1.1" not in text
+    assert (
+        "dhcp-option=interface:ens36,6,192.168.1.1"
+        in text
+    )
+
+
+def test_enabled_filter_advertises_secbox_dns(
+    tmp_path: Path,
+) -> None:
+    path = render_dnsmasq_config(
+        [make_dhcp()],
+        tmp_path / "dnsmasq.conf",
+        content_filter=make_filter(),
+    )
+
+    text = path.read_text()
+
+    assert "port=0" not in text
+    assert "interface=ens36" in text
+    assert "listen-address=192.168.50.1" in text
+
+    assert (
+        "dhcp-option=interface:ens36,6,192.168.50.1"
+        in text
+    )
+
+    assert (
+        "dhcp-option=interface:ens36,6,192.168.1.1"
+        not in text
+    )
+
+
+def test_enabled_filter_uses_explicit_upstreams(
+    tmp_path: Path,
+) -> None:
+    path = render_dnsmasq_config(
+        [make_dhcp()],
+        tmp_path / "dnsmasq.conf",
+        content_filter=make_filter(),
+    )
+
+    text = path.read_text()
+
+    assert "no-resolv" in text
+    assert "server=1.1.1.1" in text
+    assert "server=8.8.8.8" in text
+
+
+def test_blocked_domains_are_rendered(
+    tmp_path: Path,
+) -> None:
+    path = render_dnsmasq_config(
+        [make_dhcp()],
+        tmp_path / "dnsmasq.conf",
+        content_filter=make_filter(
+            blocked_domains=[
+                "example.com",
+                "ads.example.net",
+            ]
+        ),
+    )
+
+    text = path.read_text()
+
+    assert "address=/example.com/0.0.0.0" in text
+    assert "address=/example.com/::" in text
+
+    assert "address=/ads.example.net/0.0.0.0" in text
+    assert "address=/ads.example.net/::" in text
+
+
+def test_domain_names_are_normalized() -> None:
+    policy = ContentFilterPolicyConfig(
+        blocked_domains=[
+            "Example.COM.",
+            "ADS.Example.NET",
+        ]
+    )
+
+    assert policy.blocked_domains == [
+        "example.com",
+        "ads.example.net",
+    ]
+
+
+def test_allow_block_conflict_is_rejected() -> None:
+    with pytest.raises(
+        ValidationError,
+        match="domains cannot be both allowed and blocked",
+    ):
+        ContentFilterPolicyConfig(
+            blocked_domains=["example.com"],
+            allowed_domains=["EXAMPLE.COM."],
+        )
+
+
+def make_secbox_config(
+    *,
+    filter_enabled: bool = True,
+    firewall_enabled: bool = True,
+    default_action: str = "allow",
+    allowed_domains: list[str] | None = None,
+    listen_interface: str = "ens36",
+    listen_address: str = "192.168.50.1",
+    lan_method: str = "static",
+    lan_address: str | None = "192.168.50.1/24",
+) -> SecBoxConfig:
+    lan_data: dict[str, object] = {
+        "name": "ens36",
+        "role": "lan",
+        "ipv4_method": lan_method,
+    }
+
+    if lan_address is not None:
+        lan_data["ipv4_address"] = lan_address
+
+    network = NetworkConfig(
+        interfaces=[
+            NetworkInterfaceConfig(
+                name="ens33",
+                role="wan",
+                ipv4_method="dhcp",
+            ),
+            NetworkInterfaceConfig.model_validate(
+                lan_data
+            ),
+            NetworkInterfaceConfig(
+                name="ens38",
+                role="mgmt",
+                ipv4_method="static",
+                ipv4_address="192.168.100.2/24",
+            ),
+        ]
+    )
+
+    firewall = FirewallConfig(
+        enabled=firewall_enabled,
+        wan_interface="ens33",
+        lan_interface="ens36",
+        management_interface="ens38",
+    )
+
+    content_filter = ContentFilterConfig(
+        enabled=filter_enabled,
+        dns=DnsFilterConfig(
+            enabled=True,
+            listen_interface=listen_interface,
+            listen_address=listen_address,
+            upstream_servers=[
+                "1.1.1.1",
+                "8.8.8.8",
+            ],
+        ),
+        policy=ContentFilterPolicyConfig(
+            default_action=default_action,
+            allowed_domains=allowed_domains or [],
+        ),
+    )
+
+    return SecBoxConfig.model_validate(
+        {
+            "schema_version": 1,
+            "system": {
+                "hostname": "secbox",
+            },
+            "network": network.model_dump(
+                mode="json"
+            ),
+            "dhcp": [],
+            "firewall": firewall.model_dump(
+                mode="json"
+            ),
+            "content_filter": content_filter.model_dump(
+                mode="json"
+            ),
+        }
+    )
+
+
+def test_content_filter_preflight_passes() -> None:
+    config = make_secbox_config()
+
+    validate_content_filter_config(config)
+
+
+def test_disabled_content_filter_skips_preflight() -> None:
+    config = make_secbox_config(
+        filter_enabled=False,
+        firewall_enabled=False,
+    )
+
+    validate_content_filter_config(config)
+
+
+def test_enabled_filter_requires_firewall() -> None:
+    config = make_secbox_config(
+        firewall_enabled=False,
+    )
+
+    with pytest.raises(
+        ContentFilterValidationError,
+        match="requires enabled firewall",
+    ):
+        validate_content_filter_config(config)
+
+
+def test_default_block_policy_is_rejected() -> None:
+    config = make_secbox_config(
+        default_action="block",
+    )
+
+    with pytest.raises(
+        ContentFilterValidationError,
+        match="default_action='block' is not supported yet",
+    ):
+        validate_content_filter_config(config)
+
+
+def test_allowed_domains_are_rejected_for_now() -> None:
+    config = make_secbox_config(
+        allowed_domains=["example.com"],
+    )
+
+    with pytest.raises(
+        ContentFilterValidationError,
+        match="allowed_domains is not supported yet",
+    ):
+        validate_content_filter_config(config)
+
+
+def test_content_filter_must_use_lan_interface() -> None:
+    config = make_secbox_config(
+        listen_interface="ens33",
+        listen_address="192.168.1.1",
+    )
+
+    with pytest.raises(
+        ContentFilterValidationError,
+        match="must listen on a LAN interface",
+    ):
+        validate_content_filter_config(config)
+
+
+def test_content_filter_address_must_match_lan() -> None:
+    config = make_secbox_config(
+        listen_address="192.168.50.254",
+    )
+
+    with pytest.raises(
+        ContentFilterValidationError,
+        match="must match the LAN interface address",
+    ):
+        validate_content_filter_config(config)

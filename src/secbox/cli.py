@@ -42,6 +42,11 @@ from secbox.modules.dhcp.renderer import (
     DhcpRenderError,
     render_dnsmasq_config,
 )
+from secbox.modules.content_filter.validator import (
+    ContentFilterValidationError,
+    validate_content_filter_config,
+)
+
 from secbox.modules.dhcp.validator import (
     DhcpPreflightError,
     validate_dhcp_preflight,
@@ -541,14 +546,18 @@ def dhcp_render(
             config.network,
         )
 
+        validate_content_filter_config(config)
+
         rendered = render_dnsmasq_config(
             config.dhcp,
             output_path,
+            content_filter=config.content_filter,
         )
 
     except (
         ConfigStoreError,
         DhcpPreflightError,
+        ContentFilterValidationError,
         DhcpRenderError,
         OSError,
     ) as error:
@@ -574,9 +583,12 @@ def dhcp_apply() -> None:
             config.network,
         )
 
+        validate_content_filter_config(config)
+
         render_dnsmasq_config(
             config.dhcp,
             rendered_file,
+            content_filter=config.content_filter,
         )
 
         apply_dnsmasq_config(
@@ -588,6 +600,7 @@ def dhcp_apply() -> None:
     except (
         ConfigStoreError,
         DhcpPreflightError,
+        ContentFilterValidationError,
         DhcpRenderError,
         DhcpApplyError,
         OSError,
@@ -621,14 +634,24 @@ def firewall_render(
             config.network,
         )
 
+        validate_content_filter_config(config)
+
+        dns_enforcement = (
+            config.content_filter is not None
+            and config.content_filter.enabled
+            and config.content_filter.dns.enabled
+        )
+
         rendered = render_nftables_config(
             config.firewall,
             output_path,
+            enforce_lan_dns=dns_enforcement,
         )
 
     except (
         ConfigStoreError,
         FirewallPreflightError,
+        ContentFilterValidationError,
         FirewallRenderError,
         OSError,
     ) as error:
@@ -657,9 +680,18 @@ def firewall_apply() -> None:
             config.network,
         )
 
+        validate_content_filter_config(config)
+
+        dns_enforcement = (
+            config.content_filter is not None
+            and config.content_filter.enabled
+            and config.content_filter.dns.enabled
+        )
+
         render_nftables_config(
             config.firewall,
             rendered_file,
+            enforce_lan_dns=dns_enforcement,
         )
 
         apply_firewall_config(
@@ -688,6 +720,7 @@ def firewall_apply() -> None:
     except (
         ConfigStoreError,
         FirewallPreflightError,
+        ContentFilterValidationError,
         FirewallRenderError,
         FirewallApplyError,
         OSError,

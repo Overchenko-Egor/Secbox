@@ -32,3 +32,6 @@ dist/
 packaging/output/
 
 out/
+
+# Local backup files
+*.bak*

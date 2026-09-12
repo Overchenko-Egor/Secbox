@@ -194,3 +194,127 @@ def test_blacklist_drop_does_not_depend_on_log_rate(tmp_path: Path) -> None:
         log_rule = next(line for line in chain.splitlines() if "log prefix" in line and "BLACKLIST" in line)
         assert log_rule.index("limit rate") < log_rule.index("log prefix")
         assert "drop" not in log_rule
+
+
+def test_dns_bypass_is_blocked_before_forward_accept(
+    tmp_path: Path,
+) -> None:
+    output = render_nftables_config(
+        make_firewall(),
+        tmp_path / "firewall.nft",
+        enforce_lan_dns=True,
+    )
+
+    content = output.read_text(encoding="utf-8")
+
+    chain = content.split(
+        "chain forward {",
+        1,
+    )[1].split(
+        "    }",
+        1,
+    )[0]
+
+    udp_rule = (
+        'iifname "ens36" '
+        'udp dport 53 counter drop'
+    )
+
+    tcp_rule = (
+        'iifname "ens36" '
+        'tcp dport 53 counter drop'
+    )
+
+    allow_rule = (
+        'iifname "ens36" oifname "ens33" '
+        'ct state new accept'
+    )
+
+    established_rule = (
+        "ct state established,related accept"
+    )
+
+    assert udp_rule in chain
+    assert tcp_rule in chain
+
+    assert chain.index(udp_rule) < chain.index(
+        established_rule
+    )
+
+    assert chain.index(tcp_rule) < chain.index(
+        established_rule
+    )
+
+    assert chain.index(udp_rule) < chain.index(
+        allow_rule
+    )
+
+    assert chain.index(tcp_rule) < chain.index(
+        allow_rule
+    )
+
+
+def test_dns_bypass_enforcement_is_disabled_by_default(
+    tmp_path: Path,
+) -> None:
+    output = render_nftables_config(
+        make_firewall(),
+        tmp_path / "firewall.nft",
+    )
+
+    content = output.read_text(encoding="utf-8")
+
+    assert (
+        'iifname "ens36" '
+        'udp dport 53 counter drop'
+        not in content
+    )
+
+    assert (
+        'iifname "ens36" '
+        'tcp dport 53 counter drop'
+        not in content
+    )
+
+
+def test_secbox_dns_is_allowed_from_lan(
+    tmp_path: Path,
+) -> None:
+    output = render_nftables_config(
+        make_firewall(),
+        tmp_path / "firewall.nft",
+        enforce_lan_dns=True,
+    )
+
+    content = output.read_text(
+        encoding="utf-8",
+    )
+
+    chain = content.split(
+        "chain input {",
+        1,
+    )[1].split(
+        "    }",
+        1,
+    )[0]
+
+    udp_rule = (
+        'iifname "ens36" '
+        'udp dport 53 counter accept'
+    )
+
+    tcp_rule = (
+        'iifname "ens36" '
+        'tcp dport 53 counter accept'
+    )
+
+    assert udp_rule in chain
+    assert tcp_rule in chain
+
+    assert chain.index(udp_rule) < chain.index(
+        'log prefix "SECBOX_INPUT_DROP: "'
+    )
+
+    assert chain.index(tcp_rule) < chain.index(
+        'log prefix "SECBOX_INPUT_DROP: "'
+    )
