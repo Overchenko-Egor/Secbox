@@ -17,6 +17,7 @@ from secbox.modules.content_filter.validator import validate_content_filter_conf
 from secbox.modules.dhcp.renderer import render_dnsmasq_config
 from secbox.modules.dhcp.validator import validate_dhcp_preflight
 from secbox.modules.firewall.renderer import render_nftables_config
+from secbox.modules.vpn.firewall import get_vpn_firewall_interfaces
 from secbox.modules.firewall.validator import validate_firewall_preflight
 from secbox.modules.network.renderer import render_networkd
 from secbox.modules.network.state import NetworkInterfaceState
@@ -108,6 +109,7 @@ def preview_config(config: SecBoxConfig, interfaces: list[NetworkInterfaceState]
                         _load_doh_managed_state(config),
                     )
                 ),
+                vpn_interfaces=get_vpn_firewall_interfaces(config.vpn),
             )
             files[path.name] = path.read_text(encoding="utf-8")
         else:

@@ -84,6 +84,27 @@ from secbox.modules.firewall.sysctl import (
     set_ipv4_forwarding,
 )
 
+from secbox.modules.vpn.renderer import (
+    VpnRenderError,
+    render_wireguard_config,
+)
+from secbox.modules.vpn.validator import (
+    VpnValidationError,
+    validate_vpn_config,
+    validate_vpn_key_paths,
+)
+from secbox.modules.vpn.executor import (
+    VpnApplyError,
+    apply_wireguard_tunnel,
+)
+from secbox.modules.vpn.state import (
+    VpnStateError,
+    get_wireguard_status,
+)
+from secbox.modules.vpn.firewall import (
+    get_vpn_firewall_interfaces,
+)
+
 from secbox.modules.blacklist.service import (
     BlacklistError,
     add_blacklist_entry,
@@ -201,6 +222,11 @@ doh_feed_app = typer.Typer(
     no_args_is_help=True,
 )
 
+vpn_app = typer.Typer(
+    help="Manage SecBox VPN tunnels.",
+    no_args_is_help=True,
+)
+
 app.add_typer(firewall_app, name="firewall")
 app.add_typer(network_app, name="network")
 app.add_typer(config_app, name="config")
@@ -208,6 +234,7 @@ app.add_typer(dhcp_app, name="dhcp")
 app.add_typer(blacklist_app, name="blacklist",)
 app.add_typer(ids_app, name="ids",)
 app.add_typer(web_app, name="web")
+app.add_typer(vpn_app, name="vpn")
 
 content_filter_app.add_typer(
     doh_feed_app,
@@ -664,6 +691,161 @@ def dhcp_apply() -> None:
         "[green]DHCP configuration applied successfully.[/green]"
     )
 
+
+@vpn_app.command("check")
+def vpn_check() -> None:
+    """Validate SecBox VPN configuration."""
+
+    try:
+        config = _store().load()
+
+        if config.vpn is None:
+            _fail("VPN configuration is not defined")
+
+        validate_vpn_config(config)
+
+    except (
+        ConfigStoreError,
+        VpnValidationError,
+    ) as error:
+        _fail(str(error))
+
+    console.print(
+        "[green]VPN configuration is valid.[/green]"
+    )
+
+
+@vpn_app.command("render")
+def vpn_render(
+    output_dir: Path = typer.Option(
+        Path("/tmp/secbox-vpn"),
+        "--output-dir",
+        "-o",
+    ),
+) -> None:
+    """Render enabled VPN tunnels without applying them."""
+
+    try:
+        config = _store().load()
+
+        if config.vpn is None:
+            _fail("VPN configuration is not defined")
+
+        validate_vpn_config(config)
+
+        if not config.vpn.enabled:
+            _fail("VPN is disabled")
+
+        rendered_count = 0
+
+        for tunnel in config.vpn.tunnels:
+            if not tunnel.enabled:
+                continue
+
+            output = output_dir / f"{tunnel.interface}.conf"
+
+            render_wireguard_config(
+                tunnel,
+                output,
+            )
+
+            console.print(
+                f"[green]Rendered:[/green] {output}"
+            )
+
+            rendered_count += 1
+
+        console.print(
+            f"[green]Rendered VPN tunnels:[/green] {rendered_count}"
+        )
+
+    except (
+        ConfigStoreError,
+        VpnValidationError,
+        VpnRenderError,
+        OSError,
+    ) as error:
+        _fail(str(error))
+
+
+@vpn_app.command("apply")
+def vpn_apply() -> None:
+    """Apply enabled SecBox VPN tunnels."""
+
+    try:
+        config = _store().load()
+
+        if config.vpn is None:
+            _fail("VPN configuration is not defined")
+
+        validate_vpn_config(config)
+
+        if not config.vpn.enabled:
+            _fail("VPN is disabled")
+
+        validate_vpn_key_paths(config)
+
+        applied = 0
+
+        for tunnel in config.vpn.tunnels:
+            if not tunnel.enabled:
+                continue
+
+            apply_wireguard_tunnel(tunnel)
+
+            console.print(
+                f"[green]Applied VPN tunnel:[/green] "
+                f"{tunnel.name} ({tunnel.interface})"
+            )
+
+            applied += 1
+
+        console.print(
+            f"[green]Applied VPN tunnels:[/green] {applied}"
+        )
+
+    except (
+        ConfigStoreError,
+        VpnValidationError,
+        VpnApplyError,
+        OSError,
+    ) as error:
+        _fail(str(error))
+
+
+@vpn_app.command("status")
+def vpn_status() -> None:
+    """Show WireGuard runtime state."""
+
+    try:
+        config = _store().load()
+
+        if config.vpn is None:
+            _fail("VPN configuration is not defined")
+
+        for tunnel in config.vpn.tunnels:
+            console.print(
+                f"[bold]{tunnel.name} "
+                f"({tunnel.interface})[/bold]"
+            )
+
+            try:
+                status = get_wireguard_status(
+                    tunnel.interface
+                )
+            except VpnStateError:
+                console.print(
+                    "[yellow]not active[/yellow]"
+                )
+                continue
+
+            console.print(status or "active")
+
+    except ConfigStoreError as error:
+        _fail(str(error))
+
+
+
 @firewall_app.command("render")
 def firewall_render(
     output_path: Path = typer.Option(
@@ -732,6 +914,7 @@ def firewall_render(
             block_doq=block_doq,
             enable_doh_set=enable_doh_set,
             doh_resolver_addresses=doh_resolver_addresses,
+            vpn_interfaces=get_vpn_firewall_interfaces(config.vpn),
         )
 
     except (
@@ -811,6 +994,7 @@ def firewall_apply() -> None:
             block_doq=block_doq,
             enable_doh_set=enable_doh_set,
             doh_resolver_addresses=doh_resolver_addresses,
+            vpn_interfaces=get_vpn_firewall_interfaces(config.vpn),
         )
 
         apply_firewall_config(

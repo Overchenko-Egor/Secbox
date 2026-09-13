@@ -542,3 +542,43 @@ def test_enabled_doh_set_exists_when_empty(
     )
 
     assert "elements = {" not in content
+
+
+def test_render_uses_vpn_as_lan_egress(tmp_path):
+    output = render_nftables_config(
+        make_firewall(),
+        tmp_path / "firewall.nft",
+        vpn_interfaces=["wg0"],
+    )
+
+    rules = output.read_text(encoding="utf-8")
+
+    assert (
+        'iifname "ens36" oifname "wg0" '
+        "ct state new accept"
+    ) in rules
+
+    assert (
+        'iifname "ens36" oifname "wg0" masquerade'
+    ) in rules
+
+
+def test_render_vpn_egress_blocks_direct_wan_fallback(
+    tmp_path,
+):
+    output = render_nftables_config(
+        make_firewall(),
+        tmp_path / "firewall.nft",
+        vpn_interfaces=["wg0"],
+    )
+
+    rules = output.read_text(encoding="utf-8")
+
+    assert (
+        'iifname "ens36" oifname "ens33" '
+        "ct state new accept"
+    ) not in rules
+
+    assert (
+        'iifname "ens36" oifname "ens33" masquerade'
+    ) not in rules
