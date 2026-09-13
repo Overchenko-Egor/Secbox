@@ -107,6 +107,11 @@ from secbox.modules.vpn.executor import (
 )
 from secbox.modules.vpn.health import get_tunnel_health
 from secbox.modules.vpn.controller import evaluate_once
+from secbox.modules.vpn.daemon import (
+    VpnDaemon,
+    VpnDaemonError,
+    install_signal_handlers as install_vpn_signal_handlers,
+)
 from secbox.modules.vpn.state import (
     VpnStateError,
     get_wireguard_status,
@@ -841,6 +846,76 @@ def vpn_apply() -> None:
         VpnApplyError,
         VpnRoutingError,
         VpnFailoverError,
+        OSError,
+    ) as error:
+        _fail(str(error))
+
+
+
+@vpn_app.command("run")
+def vpn_run(
+    interval: float = typer.Option(
+        3.0,
+        "--interval",
+        min=0.5,
+        help="Seconds between VPN health evaluations.",
+    ),
+) -> None:
+    """Run continuous automatic VPN failover."""
+
+    logging.basicConfig(
+        level=logging.INFO,
+        format=(
+            "%(asctime)s "
+            "%(levelname)s "
+            "%(name)s: "
+            "%(message)s"
+        ),
+    )
+
+    try:
+        config = _store().load()
+
+        if config.vpn is None or not config.vpn.enabled:
+            _fail("VPN is not enabled")
+
+        validate_vpn_config(config)
+
+        daemon = VpnDaemon(
+            config.vpn,
+            state_path=Path(
+                "/var/lib/secbox/vpn-failover-state.json"
+            ),
+            interval=interval,
+        )
+
+        stop_event = Event()
+
+        install_vpn_signal_handlers(
+            stop_event
+        )
+
+        console.print(
+            "[green]SecBox VPN daemon started[/green] "
+            f"(interval={interval}s)"
+        )
+
+        daemon.run(
+            stop_event
+        )
+
+        stats = daemon.stats()
+
+        console.print(
+            "[yellow]SecBox VPN daemon stopped[/yellow] "
+            f"iterations={stats.iterations}, "
+            f"switches={stats.switches}"
+        )
+
+    except (
+        ConfigStoreError,
+        VpnValidationError,
+        VpnDaemonError,
         OSError,
     ) as error:
         _fail(str(error))

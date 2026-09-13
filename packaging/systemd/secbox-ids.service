@@ -1,6 +1,5 @@
 [Unit]
 Description=SecBox IDS Event Processor
-Documentation=man:suricata(8)
 
 BindsTo=suricata.service
 After=suricata.service network-online.target

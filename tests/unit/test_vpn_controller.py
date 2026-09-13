@@ -102,3 +102,70 @@ def test_failover_requires_three_failures(
 
     assert result.switched is True
     assert active["interface"] == "wg1"
+
+
+def test_failover_does_not_switch_to_unhealthy_backup(
+    monkeypatch,
+    tmp_path,
+):
+    """Do not flap between tunnels when both are unhealthy."""
+
+    primary = tunnel("primary", "wg0", 100)
+    backup = tunnel("backup", "wg1", 200)
+
+    vpn = VpnConfig(
+        enabled=True,
+        tunnels=[primary, backup],
+    )
+
+    active = {"interface": "wg0"}
+    activations = []
+
+    def fake_activate(selected):
+        activations.append(selected.interface)
+        active["interface"] = selected.interface
+
+    monkeypatch.setattr(
+        controller,
+        "get_active_interface",
+        lambda: active["interface"],
+    )
+    monkeypatch.setattr(
+        controller,
+        "activate_tunnel",
+        fake_activate,
+    )
+
+    health = {
+        "wg0": VpnHealthStatus.DEGRADED,
+        "wg1": VpnHealthStatus.DEGRADED,
+    }
+
+    monkeypatch.setattr(
+        controller,
+        "get_tunnel_health",
+        lambda t: snapshot(
+            t.interface,
+            health[t.interface],
+        ),
+    )
+
+    state_path = tmp_path / "state.json"
+
+    result = None
+
+    for _ in range(6):
+        result = controller.evaluate_once(
+            vpn,
+            state_path=state_path,
+        )
+
+    assert result is not None
+    assert result.switched is False
+    assert result.active_before == "wg0"
+    assert result.active_after == "wg0"
+    assert active["interface"] == "wg0"
+    assert activations == []
+    assert result.reason == (
+        "No usable backup VPN tunnel is available"
+    )

@@ -152,12 +152,17 @@ def evaluate_once(
             current_health.status != VpnHealthStatus.HEALTHY
             and counters.failures >= failure_threshold
         ):
-            candidate_health = dict(health)
-
-            candidate_health[current.interface] = replace(
-                current_health,
-                status=VpnHealthStatus.DOWN,
-            )
+            candidate_health = {
+                interface: (
+                    snapshot
+                    if snapshot.status == VpnHealthStatus.HEALTHY
+                    else replace(
+                        snapshot,
+                        status=VpnHealthStatus.DOWN,
+                    )
+                )
+                for interface, snapshot in health.items()
+            }
 
             selection = select_best_tunnel(
                 enabled,
