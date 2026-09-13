@@ -1,6 +1,6 @@
 """Configuration models for SecBox VPN tunnels."""
 
-from ipaddress import IPv4Interface, IPv4Network
+from ipaddress import IPv4Address, IPv4Interface, IPv4Network
 from pathlib import Path
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
@@ -49,6 +49,8 @@ class WireGuardTunnelConfig(BaseModel):
     source_networks: list[IPv4Network] = Field(
         default_factory=list,
     )
+
+    health_probe: IPv4Address | None = None
 
     peer: WireGuardPeerConfig
 

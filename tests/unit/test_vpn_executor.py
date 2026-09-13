@@ -74,7 +74,7 @@ def test_apply_removes_stale_wireguard_peer(
     )
     monkeypatch.setattr(
         executor,
-        "configure_policy_routing",
+        "configure_tunnel_route",
         lambda tunnel: None,
     )
 
@@ -139,7 +139,7 @@ def test_new_peer_is_configured_before_stale_peer_removed(
     )
     monkeypatch.setattr(
         executor,
-        "configure_policy_routing",
+        "configure_tunnel_route",
         lambda tunnel: None,
     )
 

@@ -8,30 +8,33 @@ from secbox.modules.vpn.models import (
 )
 
 
-def make_tunnel():
+def make_tunnel(
+    *,
+    interface="wg0",
+    table=200,
+    priority=100,
+    sources=None,
+):
+    if sources is None:
+        sources = [ip_network("192.168.50.0/24")]
+
     return WireGuardTunnelConfig(
-        name="primary",
-        interface="wg0",
+        name=interface,
+        interface=interface,
         address=ip_interface("10.200.0.2/30"),
-        private_key_file=Path("/etc/secbox/vpn/wg0.key"),
-        priority=100,
-        routing_table=200,
-        source_networks=[
-            ip_network("192.168.50.0/24"),
-        ],
+        private_key_file=Path("/key"),
+        priority=priority,
+        routing_table=table,
+        source_networks=sources,
         peer=WireGuardPeerConfig(
-            public_key="test-public-key",
+            public_key="peer",
             endpoint="192.168.1.108:51820",
-            allowed_ips=[
-                ip_network("0.0.0.0/0"),
-            ],
+            allowed_ips=[ip_network("0.0.0.0/0")],
         ),
     )
 
 
-def test_policy_routing_preserves_main_non_default_routes(
-    monkeypatch,
-):
+def test_tunnel_has_own_default_route(monkeypatch):
     calls = []
 
     def fake_run_ip(*arguments, check=True):
@@ -44,45 +47,32 @@ def test_policy_routing_preserves_main_non_default_routes(
         fake_run_ip,
     )
 
-    routing.configure_policy_routing(make_tunnel())
+    tunnel = make_tunnel(
+        interface="wg0",
+        table=200,
+    )
 
-    commands = [
-        arguments
-        for arguments, _ in calls
-    ]
-
-    assert (
-        "rule",
-        "add",
-        "from",
-        "192.168.50.0/24",
-        "priority",
-        "99",
-        "table",
-        "main",
-        "suppress_prefixlength",
-        "0",
-    ) in commands
+    routing.configure_tunnel_route(tunnel)
 
     assert (
-        "rule",
-        "add",
-        "from",
-        "192.168.50.0/24",
-        "priority",
-        "100",
-        "table",
-        "200",
-    ) in commands
+        (
+            "route",
+            "replace",
+            "default",
+            "dev",
+            "wg0",
+            "table",
+            "200",
+        ),
+        True,
+    ) in calls
 
 
-def test_policy_routing_has_vpn_default_route(
-    monkeypatch,
-):
+def test_pool_policy_uses_active_table(monkeypatch):
     calls = []
 
     def fake_run_ip(*arguments, check=True):
-        calls.append(arguments)
+        calls.append((arguments, check))
         return None
 
     monkeypatch.setattr(
@@ -91,14 +81,99 @@ def test_policy_routing_has_vpn_default_route(
         fake_run_ip,
     )
 
-    routing.configure_policy_routing(make_tunnel())
+    primary = make_tunnel(
+        interface="wg0",
+        table=200,
+        sources=[ip_network("192.168.50.0/24")],
+    )
+
+    backup = make_tunnel(
+        interface="wg1",
+        table=201,
+        priority=200,
+        sources=[],
+    )
+
+    routing.configure_pool_policy(
+        [primary, backup]
+    )
 
     assert (
-        "route",
-        "replace",
-        "default",
-        "dev",
-        "wg0",
-        "table",
-        "200",
+        (
+            "rule",
+            "add",
+            "from",
+            "192.168.50.0/24",
+            "priority",
+            "99",
+            "table",
+            "main",
+            "suppress_prefixlength",
+            "0",
+        ),
+        True,
     ) in calls
+
+    assert (
+        (
+            "rule",
+            "add",
+            "from",
+            "192.168.50.0/24",
+            "priority",
+            "100",
+            "table",
+            "250",
+        ),
+        True,
+    ) in calls
+
+
+def test_pool_policy_deduplicates_source_networks(monkeypatch):
+    calls = []
+
+    def fake_run_ip(*arguments, check=True):
+        calls.append((arguments, check))
+        return None
+
+    monkeypatch.setattr(
+        routing,
+        "_run_ip",
+        fake_run_ip,
+    )
+
+    source = ip_network("192.168.50.0/24")
+
+    primary = make_tunnel(
+        interface="wg0",
+        table=200,
+        sources=[source],
+    )
+
+    backup = make_tunnel(
+        interface="wg1",
+        table=201,
+        priority=200,
+        sources=[source],
+    )
+
+    routing.configure_pool_policy(
+        [primary, backup]
+    )
+
+    active_rules = [
+        call
+        for call in calls
+        if call[0] == (
+            "rule",
+            "add",
+            "from",
+            "192.168.50.0/24",
+            "priority",
+            "100",
+            "table",
+            "250",
+        )
+    ]
+
+    assert len(active_rules) == 1

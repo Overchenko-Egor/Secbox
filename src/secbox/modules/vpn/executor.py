@@ -5,7 +5,7 @@ import subprocess
 from secbox.modules.vpn.models import WireGuardTunnelConfig
 from secbox.modules.vpn.routing import (
     VpnRoutingError,
-    configure_policy_routing,
+    configure_tunnel_route,
 )
 
 
@@ -181,6 +181,6 @@ def apply_wireguard_tunnel(
     )
 
     try:
-        configure_policy_routing(tunnel)
+        configure_tunnel_route(tunnel)
     except VpnRoutingError as error:
         raise VpnApplyError(str(error)) from error

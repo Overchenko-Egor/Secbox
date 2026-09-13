@@ -88,6 +88,14 @@ from secbox.modules.vpn.renderer import (
     VpnRenderError,
     render_wireguard_config,
 )
+from secbox.modules.vpn.routing import (
+    VpnRoutingError,
+    configure_pool_policy,
+)
+from secbox.modules.vpn.failover import (
+    VpnFailoverError,
+    activate_tunnel,
+)
 from secbox.modules.vpn.validator import (
     VpnValidationError,
     validate_vpn_config,
@@ -97,6 +105,8 @@ from secbox.modules.vpn.executor import (
     VpnApplyError,
     apply_wireguard_tunnel,
 )
+from secbox.modules.vpn.health import get_tunnel_health
+from secbox.modules.vpn.controller import evaluate_once
 from secbox.modules.vpn.state import (
     VpnStateError,
     get_wireguard_status,
@@ -786,6 +796,14 @@ def vpn_apply() -> None:
         validate_vpn_key_paths(config)
 
         applied = 0
+        enabled_tunnels = [
+            tunnel
+            for tunnel in config.vpn.tunnels
+            if tunnel.enabled
+        ]
+
+        if not enabled_tunnels:
+            _fail("VPN has no enabled tunnels")
 
         for tunnel in config.vpn.tunnels:
             if not tunnel.enabled:
@@ -800,6 +818,19 @@ def vpn_apply() -> None:
 
             applied += 1
 
+        configure_pool_policy(enabled_tunnels)
+
+        initial_tunnel = min(
+            enabled_tunnels,
+            key=lambda tunnel: tunnel.priority,
+        )
+        activate_tunnel(initial_tunnel)
+
+        console.print(
+            f"[green]Active VPN tunnel:[/green] "
+            f"{initial_tunnel.name} ({initial_tunnel.interface})"
+        )
+
         console.print(
             f"[green]Applied VPN tunnels:[/green] {applied}"
         )
@@ -808,8 +839,33 @@ def vpn_apply() -> None:
         ConfigStoreError,
         VpnValidationError,
         VpnApplyError,
+        VpnRoutingError,
+        VpnFailoverError,
         OSError,
     ) as error:
+        _fail(str(error))
+
+
+@vpn_app.command("evaluate")
+def vpn_evaluate() -> None:
+    """Run one automatic VPN failover evaluation."""
+
+    try:
+        config = _store().load()
+
+        if config.vpn is None or not config.vpn.enabled:
+            _fail("VPN is not enabled")
+
+        result = evaluate_once(config.vpn)
+
+        console.print(
+            f"Active: {result.active_before} -> "
+            f"{result.active_after}"
+        )
+        console.print(f"Switched: {result.switched}")
+        console.print(f"Reason: {result.reason}")
+
+    except (ConfigStoreError, OSError) as error:
         _fail(str(error))
 
 
@@ -844,6 +900,63 @@ def vpn_status() -> None:
     except ConfigStoreError as error:
         _fail(str(error))
 
+
+
+@vpn_app.command("health")
+def vpn_health() -> None:
+    """Show evaluated VPN tunnel health."""
+
+    try:
+        config = _store().load()
+
+        if config.vpn is None:
+            _fail("VPN configuration is not defined")
+
+        for tunnel in config.vpn.tunnels:
+            result = get_tunnel_health(tunnel)
+
+            console.print(
+                f"[bold]{result.name} "
+                f"({result.interface})[/bold]"
+            )
+            console.print(
+                f"Status: {result.status.value.upper()}"
+            )
+            console.print(
+                f"Peer: "
+                f"{'present' if result.peer_present else 'missing'}"
+            )
+
+            handshake = (
+                f"{result.handshake_age_seconds}s ago"
+                if result.handshake_age_seconds is not None
+                else "never"
+            )
+            console.print(f"Handshake: {handshake}")
+
+            probe = (
+                "OK"
+                if result.probe_ok is True
+                else "FAILED"
+                if result.probe_ok is False
+                else "disabled"
+            )
+            console.print(f"Probe: {probe}")
+
+            if result.latency_ms is not None:
+                console.print(
+                    f"Latency: {result.latency_ms:.1f} ms"
+                )
+
+            console.print(
+                f"RX/TX: {result.rx_bytes} / "
+                f"{result.tx_bytes} bytes"
+            )
+            console.print(f"Reason: {result.reason}")
+            console.print()
+
+    except ConfigStoreError as error:
+        _fail(str(error))
 
 
 @firewall_app.command("render")

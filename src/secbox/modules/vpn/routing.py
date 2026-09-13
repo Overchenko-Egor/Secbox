@@ -1,8 +1,13 @@
-"""Policy routing helpers for SecBox VPN tunnels."""
+"""Policy routing helpers for SecBox VPN pool."""
 
 import subprocess
 
 from secbox.modules.vpn.models import WireGuardTunnelConfig
+
+
+ACTIVE_TABLE = 250
+MAIN_RULE_PRIORITY = 99
+VPN_RULE_PRIORITY = 100
 
 
 class VpnRoutingError(RuntimeError):
@@ -13,10 +18,7 @@ def _run_ip(
     *arguments: str,
     check: bool = True,
 ) -> subprocess.CompletedProcess:
-    command = [
-        "/usr/sbin/ip",
-        *arguments,
-    ]
+    command = ["/usr/sbin/ip", *arguments]
 
     result = subprocess.run(
         command,
@@ -31,7 +33,6 @@ def _run_ip(
             or result.stdout.strip()
             or f"exit code {result.returncode}"
         )
-
         raise VpnRoutingError(
             f"ip command failed: {' '.join(command)}: {message}"
         )
@@ -39,21 +40,10 @@ def _run_ip(
     return result
 
 
-def configure_policy_routing(
+def configure_tunnel_route(
     tunnel: WireGuardTunnelConfig,
 ) -> None:
-    """Install source-based policy routing for one VPN tunnel."""
-
-    table = str(tunnel.routing_table)
-    priority = tunnel.priority
-
-    if priority <= 1:
-        raise VpnRoutingError(
-            "VPN routing priority must be greater than 1"
-        )
-
-    main_priority = str(priority - 1)
-    vpn_priority = str(priority)
+    """Install the tunnel's own routing table."""
 
     _run_ip(
         "route",
@@ -62,112 +52,78 @@ def configure_policy_routing(
         "dev",
         tunnel.interface,
         "table",
-        table,
+        str(tunnel.routing_table),
     )
 
-    for source_network in tunnel.source_networks:
-        source = str(source_network)
 
+def configure_pool_policy(
+    tunnels: list[WireGuardTunnelConfig],
+) -> None:
+    """Route VPN-managed source networks through active table."""
+
+    source_networks = {
+        str(network)
+        for tunnel in tunnels
+        if tunnel.enabled
+        for network in tunnel.source_networks
+    }
+
+    for source in sorted(source_networks):
         _run_ip(
-            "rule",
-            "del",
-            "from",
-            source,
-            "priority",
-            main_priority,
-            "table",
-            "main",
-            "suppress_prefixlength",
-            "0",
+            "rule", "del",
+            "from", source,
+            "priority", str(MAIN_RULE_PRIORITY),
+            "table", "main",
+            "suppress_prefixlength", "0",
             check=False,
         )
 
         _run_ip(
-            "rule",
-            "del",
-            "from",
-            source,
-            "priority",
-            vpn_priority,
-            "table",
-            table,
+            "rule", "del",
+            "from", source,
+            "priority", str(VPN_RULE_PRIORITY),
             check=False,
         )
 
         _run_ip(
-            "rule",
-            "add",
-            "from",
-            source,
-            "priority",
-            main_priority,
-            "table",
-            "main",
-            "suppress_prefixlength",
-            "0",
+            "rule", "add",
+            "from", source,
+            "priority", str(MAIN_RULE_PRIORITY),
+            "table", "main",
+            "suppress_prefixlength", "0",
         )
 
         _run_ip(
-            "rule",
-            "add",
-            "from",
-            source,
-            "priority",
-            vpn_priority,
-            "table",
-            table,
+            "rule", "add",
+            "from", source,
+            "priority", str(VPN_RULE_PRIORITY),
+            "table", str(ACTIVE_TABLE),
         )
 
 
-def remove_policy_routing(
+def remove_tunnel_route(
     tunnel: WireGuardTunnelConfig,
 ) -> None:
-    """Remove policy routing for one VPN tunnel."""
-
-    table = str(tunnel.routing_table)
-    priority = tunnel.priority
-
-    if priority <= 1:
-        raise VpnRoutingError(
-            "VPN routing priority must be greater than 1"
-        )
-
-    main_priority = str(priority - 1)
-    vpn_priority = str(priority)
-
-    for source_network in tunnel.source_networks:
-        source = str(source_network)
-
-        _run_ip(
-            "rule",
-            "del",
-            "from",
-            source,
-            "priority",
-            main_priority,
-            "table",
-            "main",
-            "suppress_prefixlength",
-            "0",
-            check=False,
-        )
-
-        _run_ip(
-            "rule",
-            "del",
-            "from",
-            source,
-            "priority",
-            vpn_priority,
-            "table",
-            table,
-            check=False,
-        )
+    """Remove the tunnel's own routing table."""
 
     _run_ip(
         "route",
         "flush",
         "table",
-        table,
+        str(tunnel.routing_table),
+        check=False,
+    )
+
+
+def remove_tunnel_route(
+    tunnel: WireGuardTunnelConfig,
+) -> None:
+    """Remove the tunnel's own routing table."""
+
+    _run_ip(
+        "route",
+        "flush",
+        "table",
+        str(tunnel.routing_table),
         check=False,
     )

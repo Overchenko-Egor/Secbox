@@ -12,6 +12,7 @@ from secbox.modules.firewall.models import FirewallConfig
 
 from secbox.modules.ids.config import IdsConfig
 from secbox.modules.content_filter.models import ContentFilterConfig
+from secbox.modules.vpn.models import VpnConfig
 
 class SystemConfig(BaseModel):
     """General SecBox system settings."""
@@ -52,3 +53,4 @@ class SecBoxConfig(BaseModel):
     firewall: FirewallConfig | None = None
     ids: IdsConfig = Field(default_factory=IdsConfig,)
     content_filter: ContentFilterConfig | None = None
+    vpn: VpnConfig | None = None
