@@ -73,15 +73,21 @@ class DohFeedStore:
                 mode="json",
             )
 
-            temporary.write_text(
-                json.dumps(
-                    payload,
-                    indent=2,
-                    sort_keys=True,
-                )
-                + "\n",
+            with temporary.open(
+                "w",
                 encoding="utf-8",
-            )
+            ) as file:
+                file.write(
+                    json.dumps(
+                        payload,
+                        indent=2,
+                        sort_keys=True,
+                    )
+                    + "\n"
+                )
+
+                file.flush()
+                os.fsync(file.fileno())
 
             os.chmod(
                 temporary,
@@ -92,6 +98,16 @@ class DohFeedStore:
                 temporary,
                 self.path,
             )
+
+            directory_fd = os.open(
+                self.path.parent,
+                os.O_RDONLY | os.O_DIRECTORY,
+            )
+
+            try:
+                os.fsync(directory_fd)
+            finally:
+                os.close(directory_fd)
 
         except OSError as error:
             try:
