@@ -1,0 +1,11 @@
+[Unit]
+Description=Periodically Refresh SecBox Managed DoH Feed
+
+[Timer]
+OnBootSec=5min
+OnUnitActiveSec=6h
+Persistent=true
+RandomizedDelaySec=10min
+
+[Install]
+WantedBy=timers.target

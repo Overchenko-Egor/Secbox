@@ -1,0 +1,11 @@
+#!/bin/sh
+set -eu
+
+SECBOXCTL="/opt/secbox/venv/bin/secboxctl"
+
+if [ ! -x "$SECBOXCTL" ]; then
+    echo "secboxctl: $SECBOXCTL is not installed or not executable" >&2
+    exit 127
+fi
+
+exec "$SECBOXCTL" "$@"

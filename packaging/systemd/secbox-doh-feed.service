@@ -1,0 +1,10 @@
+[Unit]
+Description=SecBox Managed DoH Feed Update
+After=network-online.target secbox-firewall.service
+Wants=network-online.target
+Requires=secbox-firewall.service
+
+[Service]
+Type=oneshot
+Environment=SECBOX_CONFIG_PATH=/etc/secbox/config.yml
+ExecStart=/usr/bin/secboxctl content-filter doh-feed update
