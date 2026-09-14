@@ -116,3 +116,85 @@ def test_apply_vpn_via_helper_timeout(
         actions.apply_vpn_via_helper(
             vpn()
         )
+
+
+def test_get_vpn_via_helper_success(
+    monkeypatch,
+):
+    monkeypatch.setattr(
+        actions,
+        "_exchange",
+        lambda request: {
+            "ok": True,
+            "result": {
+                "vpn": vpn().model_dump(
+                    mode="json"
+                ),
+            },
+        },
+    )
+
+    result = actions.get_vpn_via_helper()
+
+    assert result.enabled is True
+    assert len(result.tunnels) == 1
+    assert result.tunnels[0].interface == "wg0"
+
+
+def test_get_vpn_via_helper_failure(
+    monkeypatch,
+):
+    monkeypatch.setattr(
+        actions,
+        "_exchange",
+        lambda request: {
+            "ok": False,
+            "error": "internal_error",
+        },
+    )
+
+    with pytest.raises(
+        actions.WebActionError
+    ):
+        actions.get_vpn_via_helper()
+
+
+def test_get_vpn_via_helper_success(
+    monkeypatch,
+):
+    monkeypatch.setattr(
+        actions,
+        "_exchange",
+        lambda request: {
+            "ok": True,
+            "result": {
+                "vpn": vpn().model_dump(
+                    mode="json"
+                ),
+            },
+        },
+    )
+
+    result = actions.get_vpn_via_helper()
+
+    assert result.enabled is True
+    assert len(result.tunnels) == 1
+    assert result.tunnels[0].interface == "wg0"
+
+
+def test_get_vpn_via_helper_failure(
+    monkeypatch,
+):
+    monkeypatch.setattr(
+        actions,
+        "_exchange",
+        lambda request: {
+            "ok": False,
+            "error": "internal_error",
+        },
+    )
+
+    with pytest.raises(
+        actions.WebActionError
+    ):
+        actions.get_vpn_via_helper()

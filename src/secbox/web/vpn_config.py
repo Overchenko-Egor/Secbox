@@ -63,3 +63,19 @@ class VpnConfigApplyResponse(BaseModel):
     removed_tunnels: int
     active_name: str | None
     active_interface: str | None
+
+
+class VpnConfigReadResponse(BaseModel):
+    """Safe VPN configuration returned to the Web UI."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    vpn: VpnConfig
+
+
+class VpnConfigReadResponse(BaseModel):
+    """Safe VPN configuration returned to the Web UI."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    vpn: VpnConfig

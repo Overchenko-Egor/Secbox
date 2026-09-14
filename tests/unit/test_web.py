@@ -789,3 +789,103 @@ def test_vpn_config_put_reports_busy_action(
     )
 
     assert response.status_code == 409
+
+
+def test_vpn_config_get_returns_current_configuration(
+    client: TestClient,
+    monkeypatch: MonkeyPatch,
+) -> None:
+    from secbox.modules.vpn.models import VpnConfig
+
+    current = VpnConfig.model_validate(
+        vpn_candidate_payload()["vpn"]
+    )
+
+    monkeypatch.setattr(
+        "secbox.web.app.get_vpn_via_helper",
+        lambda: current,
+    )
+
+    response = client.get(
+        "/api/v1/vpn/config",
+    )
+
+    assert response.status_code == 200
+
+    body = response.json()
+
+    assert body["vpn"]["enabled"] is True
+    assert len(body["vpn"]["tunnels"]) >= 1
+
+
+def test_vpn_config_get_handles_helper_failure(
+    client: TestClient,
+    monkeypatch: MonkeyPatch,
+) -> None:
+    from secbox.web.actions import WebActionError
+
+    def failure():
+        raise WebActionError(
+            "failed"
+        )
+
+    monkeypatch.setattr(
+        "secbox.web.app.get_vpn_via_helper",
+        failure,
+    )
+
+    response = client.get(
+        "/api/v1/vpn/config",
+    )
+
+    assert response.status_code == 503
+
+
+def test_vpn_config_get_returns_current_configuration(
+    client: TestClient,
+    monkeypatch: MonkeyPatch,
+) -> None:
+    from secbox.modules.vpn.models import VpnConfig
+
+    current = VpnConfig.model_validate(
+        vpn_candidate_payload()["vpn"]
+    )
+
+    monkeypatch.setattr(
+        "secbox.web.app.get_vpn_via_helper",
+        lambda: current,
+    )
+
+    response = client.get(
+        "/api/v1/vpn/config",
+    )
+
+    assert response.status_code == 200
+
+    body = response.json()
+
+    assert body["vpn"]["enabled"] is True
+    assert len(body["vpn"]["tunnels"]) >= 1
+
+
+def test_vpn_config_get_handles_helper_failure(
+    client: TestClient,
+    monkeypatch: MonkeyPatch,
+) -> None:
+    from secbox.web.actions import WebActionError
+
+    def failure():
+        raise WebActionError(
+            "failed"
+        )
+
+    monkeypatch.setattr(
+        "secbox.web.app.get_vpn_via_helper",
+        failure,
+    )
+
+    response = client.get(
+        "/api/v1/vpn/config",
+    )
+
+    assert response.status_code == 503

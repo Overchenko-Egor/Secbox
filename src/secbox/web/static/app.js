@@ -681,3 +681,658 @@ byId("config-editor").addEventListener("input", () => {
   byId("config-message").className = "";
 });
 refresh();
+
+/* SECBOX VPN CONFIGURATION UI START */
+(() => {
+    "use strict";
+
+    const API = "/api/v1/vpn/config";
+    const VALIDATE_API = "/api/v1/vpn/config/validate";
+
+    let vpnConfig = null;
+
+    function esc(value) {
+        return String(value ?? "")
+            .replaceAll("&", "&amp;")
+            .replaceAll("<", "&lt;")
+            .replaceAll(">", "&gt;")
+            .replaceAll('"', "&quot;");
+    }
+
+    function csv(value) {
+        if (!value) {
+            return [];
+        }
+
+        return String(value)
+            .split(",")
+            .map((item) => item.trim())
+            .filter(Boolean);
+    }
+
+    function defaultTunnel(index) {
+        const number = index + 1;
+
+        return {
+            name: `tunnel-${number}`,
+            enabled: true,
+            interface: `wg${index}`,
+            address: `10.20${index}.0.2/30`,
+            private_key_file: `/etc/secbox/vpn/wg${index}.key`,
+            mtu: 1420,
+            priority: 100 + index * 100,
+            routing_table: 200 + index,
+            source_networks: [],
+            health_probe: "",
+            peer: {
+                public_key: "",
+                endpoint: "",
+                allowed_ips: ["0.0.0.0/0"],
+                persistent_keepalive: 25,
+                preshared_key_file: null,
+            },
+        };
+    }
+
+    function field(label, name, value, type = "text") {
+        return `
+            <label class="vpn-config-field">
+                <span>${esc(label)}</span>
+                <input
+                    type="${esc(type)}"
+                    data-vpn-field="${esc(name)}"
+                    value="${esc(value ?? "")}"
+                >
+            </label>
+        `;
+    }
+
+    function tunnelCard(tunnel, index) {
+        const peer = tunnel.peer || {};
+
+        return `
+            <article
+                class="vpn-config-tunnel"
+                data-vpn-tunnel="${index}"
+            >
+                <div class="vpn-config-tunnel-header">
+                    <div>
+                        <h3>${esc(tunnel.name || `Tunnel ${index + 1}`)}</h3>
+                        <div class="vpn-config-subtitle">
+                            ${esc(tunnel.interface || "new interface")}
+                        </div>
+                    </div>
+
+                    <div class="vpn-config-tunnel-actions">
+                        <label class="vpn-config-enabled">
+                            <input
+                                type="checkbox"
+                                data-vpn-field="enabled"
+                                ${tunnel.enabled !== false ? "checked" : ""}
+                            >
+                            Enabled
+                        </label>
+
+                        <button
+                            type="button"
+                            class="vpn-config-danger"
+                            data-vpn-remove="${index}"
+                        >
+                            Delete
+                        </button>
+                    </div>
+                </div>
+
+                <div class="vpn-config-grid">
+                    ${field("Name", "name", tunnel.name)}
+                    ${field("Interface", "interface", tunnel.interface)}
+                    ${field("Address", "address", tunnel.address)}
+                    ${field(
+                        "Private key path",
+                        "private_key_file",
+                        tunnel.private_key_file
+                    )}
+                    ${field("MTU", "mtu", tunnel.mtu ?? 1420, "number")}
+                    ${field(
+                        "Priority",
+                        "priority",
+                        tunnel.priority ?? 100,
+                        "number"
+                    )}
+                    ${field(
+                        "Routing table",
+                        "routing_table",
+                        tunnel.routing_table ?? 200,
+                        "number"
+                    )}
+                    ${field(
+                        "Health probe",
+                        "health_probe",
+                        tunnel.health_probe ?? ""
+                    )}
+                    ${field(
+                        "Source networks",
+                        "source_networks",
+                        (tunnel.source_networks || []).join(", ")
+                    )}
+                    ${field(
+                        "Peer endpoint",
+                        "peer.endpoint",
+                        peer.endpoint ?? ""
+                    )}
+                    ${field(
+                        "Peer public key",
+                        "peer.public_key",
+                        peer.public_key ?? ""
+                    )}
+                    ${field(
+                        "Allowed IPs",
+                        "peer.allowed_ips",
+                        (peer.allowed_ips || []).join(", ")
+                    )}
+                    ${field(
+                        "Persistent keepalive",
+                        "peer.persistent_keepalive",
+                        peer.persistent_keepalive ?? 25,
+                        "number"
+                    )}
+                    ${field(
+                        "Preshared key path",
+                        "peer.preshared_key_file",
+                        peer.preshared_key_file ?? ""
+                    )}
+                </div>
+            </article>
+        `;
+    }
+
+    function ensurePanel() {
+        let panel = document.getElementById(
+            "vpn-configuration-panel"
+        );
+
+        if (panel) {
+            return panel;
+        }
+
+        panel = document.createElement(
+            "section"
+        );
+
+        panel.id = "vpn-configuration-panel";
+        panel.className = "vpn-config-panel";
+
+        const target =
+            document.querySelector("main")
+            || document.querySelector(".container")
+            || document.body;
+
+        target.appendChild(
+            panel
+        );
+
+        return panel;
+    }
+
+    function message(text, type = "info") {
+        const node = document.getElementById(
+            "vpn-config-message"
+        );
+
+        if (!node) {
+            return;
+        }
+
+        node.className =
+            `vpn-config-message vpn-config-message-${type}`;
+
+        node.textContent = text;
+    }
+
+    function render() {
+        const panel = ensurePanel();
+
+        if (!vpnConfig) {
+            panel.innerHTML = `
+                <div class="vpn-config-heading">
+                    <div>
+                        <h2>VPN Configuration</h2>
+                        <p>
+                            Loading current VPN configuration...
+                        </p>
+                    </div>
+                </div>
+            `;
+            return;
+        }
+
+        panel.innerHTML = `
+            <div class="vpn-config-heading">
+                <div>
+                    <h2>VPN Configuration</h2>
+                    <p>
+                        Manage the L3 WireGuard pool.
+                        Private key contents never leave the privileged backend.
+                    </p>
+                </div>
+
+                <label class="vpn-config-master-enabled">
+                    <input
+                        id="vpn-config-master-enabled"
+                        type="checkbox"
+                        ${vpnConfig.enabled ? "checked" : ""}
+                    >
+                    VPN enabled
+                </label>
+            </div>
+
+            <div id="vpn-config-message"
+                 class="vpn-config-message">
+                Configuration loaded.
+            </div>
+
+            <div id="vpn-config-tunnels">
+                ${(vpnConfig.tunnels || [])
+                    .map(tunnelCard)
+                    .join("")}
+            </div>
+
+            <div class="vpn-config-toolbar">
+                <button
+                    type="button"
+                    id="vpn-config-add"
+                    class="vpn-config-secondary"
+                >
+                    + Add tunnel
+                </button>
+
+                <div class="vpn-config-toolbar-right">
+                    <button
+                        type="button"
+                        id="vpn-config-reload"
+                        class="vpn-config-secondary"
+                    >
+                        Reload
+                    </button>
+
+                    <button
+                        type="button"
+                        id="vpn-config-validate"
+                        class="vpn-config-secondary"
+                    >
+                        Validate
+                    </button>
+
+                    <button
+                        type="button"
+                        id="vpn-config-apply"
+                        class="vpn-config-primary"
+                    >
+                        Apply changes
+                    </button>
+                </div>
+            </div>
+        `;
+
+        bind();
+    }
+
+    function setPath(object, path, value) {
+        const parts = path.split(".");
+        let target = object;
+
+        for (let i = 0; i < parts.length - 1; i += 1) {
+            target[parts[i]] ??= {};
+            target = target[parts[i]];
+        }
+
+        target[parts.at(-1)] = value;
+    }
+
+    function readForm() {
+        const next = structuredClone(
+            vpnConfig
+        );
+
+        next.enabled =
+            document.getElementById(
+                "vpn-config-master-enabled"
+            )?.checked ?? false;
+
+        document
+            .querySelectorAll("[data-vpn-tunnel]")
+            .forEach((card) => {
+                const index = Number(
+                    card.dataset.vpnTunnel
+                );
+
+                const tunnel =
+                    next.tunnels[index];
+
+                card
+                    .querySelectorAll("[data-vpn-field]")
+                    .forEach((input) => {
+                        const path =
+                            input.dataset.vpnField;
+
+                        let value;
+
+                        if (input.type === "checkbox") {
+                            value = input.checked;
+                        } else if (
+                            input.type === "number"
+                        ) {
+                            value = Number(
+                                input.value
+                            );
+                        } else {
+                            value = input.value.trim();
+                        }
+
+                        if (
+                            path === "source_networks"
+                            || path === "peer.allowed_ips"
+                        ) {
+                            value = csv(
+                                value
+                            );
+                        }
+
+                        if (
+                            path === "health_probe"
+                            && value === ""
+                        ) {
+                            value = null;
+                        }
+
+                        if (
+                            path === "peer.preshared_key_file"
+                            && value === ""
+                        ) {
+                            value = null;
+                        }
+
+                        setPath(
+                            tunnel,
+                            path,
+                            value
+                        );
+                    });
+            });
+
+        return next;
+    }
+
+    async function api(
+        url,
+        options = {}
+    ) {
+        const response = await fetch(
+            url,
+            {
+                credentials: "same-origin",
+                ...options,
+            }
+        );
+
+        let body = null;
+
+        try {
+            body = await response.json();
+        } catch {
+            body = null;
+        }
+
+        if (!response.ok) {
+            const detail =
+                body?.detail
+                || body?.error
+                || `HTTP ${response.status}`;
+
+            throw new Error(
+                detail
+            );
+        }
+
+        return body;
+    }
+
+    async function load() {
+        try {
+            message(
+                "Loading configuration..."
+            );
+
+            const body = await api(
+                API
+            );
+
+            vpnConfig = body.vpn;
+
+            render();
+
+            message(
+                "Configuration loaded.",
+                "success"
+            );
+
+        } catch (error) {
+            const panel = ensurePanel();
+
+            panel.innerHTML = `
+                <div class="vpn-config-heading">
+                    <div>
+                        <h2>VPN Configuration</h2>
+                        <p>
+                            Configuration could not be loaded.
+                        </p>
+                    </div>
+                </div>
+
+                <div class="vpn-config-message vpn-config-message-error">
+                    ${esc(error.message)}
+                </div>
+
+                <button
+                    type="button"
+                    id="vpn-config-retry"
+                    class="vpn-config-secondary"
+                >
+                    Retry
+                </button>
+            `;
+
+            document
+                .getElementById("vpn-config-retry")
+                ?.addEventListener(
+                    "click",
+                    load
+                );
+        }
+    }
+
+    async function validate() {
+        try {
+            const candidate = readForm();
+
+            message(
+                "Validating..."
+            );
+
+            await api(
+                VALIDATE_API,
+                {
+                    method: "POST",
+                    headers: {
+                        "Content-Type": "application/json",
+                    },
+                    body: JSON.stringify({
+                        vpn: candidate,
+                    }),
+                }
+            );
+
+            message(
+                "Configuration is valid.",
+                "success"
+            );
+
+        } catch (error) {
+            message(
+                `Validation failed: ${error.message}`,
+                "error"
+            );
+        }
+    }
+
+    async function apply() {
+        const button =
+            document.getElementById(
+                "vpn-config-apply"
+            );
+
+        try {
+            const candidate = readForm();
+
+            if (!window.confirm(
+                "Apply VPN configuration? Active network paths may change."
+            )) {
+                return;
+            }
+
+            button.disabled = true;
+
+            message(
+                "Applying VPN configuration..."
+            );
+
+            const body = await api(
+                API,
+                {
+                    method: "PUT",
+                    headers: {
+                        "Content-Type": "application/json",
+                    },
+                    body: JSON.stringify({
+                        vpn: candidate,
+                    }),
+                }
+            );
+
+            message(
+                `Applied successfully. Active tunnel: ${
+                    body.active_name || "none"
+                } (${
+                    body.active_interface || "none"
+                }).`,
+                "success"
+            );
+
+            setTimeout(
+                load,
+                1200
+            );
+
+        } catch (error) {
+            message(
+                `Apply failed: ${error.message}`,
+                "error"
+            );
+
+        } finally {
+            if (button) {
+                button.disabled = false;
+            }
+        }
+    }
+
+    function bind() {
+        document
+            .getElementById("vpn-config-add")
+            ?.addEventListener(
+                "click",
+                () => {
+                    vpnConfig.tunnels ??= [];
+
+                    vpnConfig.tunnels.push(
+                        defaultTunnel(
+                            vpnConfig.tunnels.length
+                        )
+                    );
+
+                    render();
+
+                    message(
+                        "New tunnel added locally. Validate before applying."
+                    );
+                }
+            );
+
+        document
+            .querySelectorAll("[data-vpn-remove]")
+            .forEach((button) => {
+                button.addEventListener(
+                    "click",
+                    () => {
+                        const index = Number(
+                            button.dataset.vpnRemove
+                        );
+
+                        const current = readForm();
+
+                        current.tunnels.splice(
+                            index,
+                            1
+                        );
+
+                        vpnConfig = current;
+
+                        render();
+
+                        message(
+                            "Tunnel removed locally. Apply to commit the change."
+                        );
+                    }
+                );
+            });
+
+        document
+            .getElementById("vpn-config-reload")
+            ?.addEventListener(
+                "click",
+                load
+            );
+
+        document
+            .getElementById("vpn-config-validate")
+            ?.addEventListener(
+                "click",
+                validate
+            );
+
+        document
+            .getElementById("vpn-config-apply")
+            ?.addEventListener(
+                "click",
+                apply
+            );
+    }
+
+    function boot() {
+        ensurePanel();
+        render();
+        load();
+    }
+
+    if (
+        document.readyState === "loading"
+    ) {
+        document.addEventListener(
+            "DOMContentLoaded",
+            boot
+        );
+    } else {
+        boot();
+    }
+})();
+/* SECBOX VPN CONFIGURATION UI END */

@@ -16,6 +16,7 @@ from secbox.actions.vpn import (
     VpnActionError,
     VpnActionResult,
     apply_vpn_action,
+    get_vpn_action,
 )
 from secbox.modules.vpn.models import VpnConfig
 
@@ -272,20 +273,59 @@ def socket_request() -> None:
                 "request must be an object"
             )
 
-        if set(request) != {
-            "action",
-            "vpn",
-        }:
-            raise ValueError(
-                "unexpected request fields"
+        action = request.get(
+            "action"
+        )
+
+        if action == "get-vpn":
+            if set(request) != {
+                "action",
+            }:
+                raise ValueError(
+                    "unexpected get-vpn fields"
+                )
+
+            vpn = get_vpn_action()
+
+            _emit(
+                {
+                    "ok": True,
+                    "result": {
+                        "vpn": vpn.model_dump(
+                            mode="json"
+                        )
+                    },
+                }
+            )
+            return
+
+        if action == "apply-vpn":
+            if set(request) != {
+                "action",
+                "vpn",
+            }:
+                raise ValueError(
+                    "unexpected apply-vpn fields"
+                )
+
+            response, code = _handle_vpn(
+                request["vpn"]
             )
 
-        if request.get("action") != "apply-vpn":
-            raise ValueError(
-                "unsupported action"
+            _emit(
+                response
             )
 
-        payload = request["vpn"]
+            if code:
+                raise typer.Exit(
+                    code
+                )
+
+            return
+
+        raise ValueError(
+            "unsupported action"
+        )
 
     except (
         ValueError,
@@ -304,18 +344,6 @@ def socket_request() -> None:
             EXIT_FAILED
         )
 
-    response, code = _handle_vpn(
-        payload
-    )
-
-    _emit(
-        response
-    )
-
-    if code:
-        raise typer.Exit(
-            code
-        )
 
 
 if __name__ == "__main__":

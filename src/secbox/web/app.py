@@ -45,11 +45,13 @@ from secbox.web.actions import (
     WebActionError,
     WebActionTimeoutError,
     apply_vpn_via_helper,
+    get_vpn_via_helper,
 )
 from secbox.web.vpn_config import (
     VpnConfigPreviewRequest,
     VpnConfigPreviewResponse,
     VpnConfigApplyResponse,
+    VpnConfigReadResponse,
     VpnValidationError,
     validate_vpn_candidate,
 )
@@ -208,6 +210,36 @@ def create_app(settings: WebSettings | None = None) -> FastAPI:
                 422,
                 str(error),
             ) from error
+
+    @router.get(
+        "/api/v1/vpn/config",
+        tags=["vpn"],
+    )
+    def get_vpn_web_config() -> VpnConfigReadResponse:
+        """Return editable VPN configuration without secret key contents."""
+
+        try:
+            vpn = get_vpn_via_helper()
+
+        except WebActionTimeoutError as error:
+            raise HTTPException(
+                504,
+                "VPN configuration read timed out",
+            ) from error
+
+        except WebActionError as error:
+            logger.error(
+                "Privileged VPN configuration read failed"
+            )
+            raise HTTPException(
+                503,
+                "VPN configuration is temporarily unavailable",
+            ) from error
+
+        return VpnConfigReadResponse(
+            vpn=vpn
+        )
+
 
     @router.put(
         "/api/v1/vpn/config",

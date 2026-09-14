@@ -144,3 +144,29 @@ def apply_vpn_action(
         active_name=applied.active_name,
         active_interface=applied.active_interface,
     )
+
+
+
+def get_vpn_action(
+    *,
+    store: ConfigStore | None = None,
+) -> VpnConfig:
+    """Return VPN configuration without reading secret key contents."""
+
+    store = (
+        store
+        if store is not None
+        else ConfigStore(
+            Path(CONFIG_PATH)
+        )
+    )
+
+    config = store.load()
+
+    if config.vpn is None:
+        return VpnConfig(
+            enabled=False,
+            tunnels=[],
+        )
+
+    return config.vpn

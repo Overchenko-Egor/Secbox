@@ -487,3 +487,161 @@ main{margin-left:230px;max-width:1560px;padding:36px 44px}header{display:flex;ju
   .health-grid{grid-template-columns:1fr}
   .health-badge{white-space:normal}
 }
+
+/* SECBOX VPN CONFIGURATION CSS START */
+
+.vpn-config-panel {
+    margin-top: 24px;
+    padding: 24px;
+    border: 1px solid rgba(148, 163, 184, 0.22);
+    border-radius: 16px;
+    background: rgba(15, 23, 42, 0.62);
+}
+
+.vpn-config-heading {
+    display: flex;
+    justify-content: space-between;
+    gap: 24px;
+    align-items: flex-start;
+    margin-bottom: 18px;
+}
+
+.vpn-config-heading h2 {
+    margin: 0 0 6px;
+}
+
+.vpn-config-heading p,
+.vpn-config-subtitle {
+    opacity: 0.72;
+}
+
+.vpn-config-master-enabled,
+.vpn-config-enabled {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    white-space: nowrap;
+}
+
+.vpn-config-message {
+    margin: 14px 0 20px;
+    padding: 11px 14px;
+    border-radius: 10px;
+    background: rgba(59, 130, 246, 0.12);
+}
+
+.vpn-config-message-success {
+    background: rgba(34, 197, 94, 0.14);
+}
+
+.vpn-config-message-error {
+    background: rgba(239, 68, 68, 0.14);
+}
+
+.vpn-config-tunnel {
+    margin: 18px 0;
+    padding: 18px;
+    border: 1px solid rgba(148, 163, 184, 0.22);
+    border-radius: 14px;
+    background: rgba(15, 23, 42, 0.34);
+}
+
+.vpn-config-tunnel-header {
+    display: flex;
+    justify-content: space-between;
+    gap: 16px;
+    margin-bottom: 16px;
+}
+
+.vpn-config-tunnel-header h3 {
+    margin: 0 0 4px;
+}
+
+.vpn-config-tunnel-actions {
+    display: flex;
+    gap: 12px;
+    align-items: center;
+}
+
+.vpn-config-grid {
+    display: grid;
+    grid-template-columns: repeat(
+        auto-fit,
+        minmax(230px, 1fr)
+    );
+    gap: 14px;
+}
+
+.vpn-config-field {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.vpn-config-field span {
+    font-size: 0.86rem;
+    opacity: 0.72;
+}
+
+.vpn-config-field input {
+    width: 100%;
+    box-sizing: border-box;
+    padding: 10px 11px;
+    border: 1px solid rgba(148, 163, 184, 0.30);
+    border-radius: 8px;
+    background: rgba(2, 6, 23, 0.46);
+    color: inherit;
+}
+
+.vpn-config-toolbar {
+    display: flex;
+    justify-content: space-between;
+    gap: 12px;
+    margin-top: 20px;
+}
+
+.vpn-config-toolbar-right {
+    display: flex;
+    gap: 10px;
+}
+
+.vpn-config-panel button {
+    padding: 10px 15px;
+    border-radius: 8px;
+    border: 1px solid rgba(148, 163, 184, 0.28);
+    cursor: pointer;
+}
+
+.vpn-config-primary {
+    background: #2563eb;
+    color: white;
+}
+
+.vpn-config-secondary {
+    background: rgba(148, 163, 184, 0.10);
+    color: inherit;
+}
+
+.vpn-config-danger {
+    background: rgba(239, 68, 68, 0.14);
+    color: #fca5a5;
+}
+
+.vpn-config-panel button:disabled {
+    opacity: 0.55;
+    cursor: wait;
+}
+
+@media (max-width: 720px) {
+    .vpn-config-heading,
+    .vpn-config-toolbar,
+    .vpn-config-tunnel-header {
+        flex-direction: column;
+    }
+
+    .vpn-config-toolbar-right {
+        flex-wrap: wrap;
+    }
+}
+
+/* SECBOX VPN CONFIGURATION CSS END */
