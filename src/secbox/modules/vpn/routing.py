@@ -115,15 +115,3 @@ def remove_tunnel_route(
     )
 
 
-def remove_tunnel_route(
-    tunnel: WireGuardTunnelConfig,
-) -> None:
-    """Remove the tunnel's own routing table."""
-
-    _run_ip(
-        "route",
-        "flush",
-        "table",
-        str(tunnel.routing_table),
-        check=False,
-    )

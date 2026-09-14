@@ -1,30 +1,36 @@
 """Cross-module validation for SecBox VPN configuration."""
 
+from collections.abc import Collection
 from pathlib import Path
 
 from secbox.core.models import SecBoxConfig
+from secbox.modules.vpn.models import VpnConfig
 
 
 class VpnValidationError(ValueError):
     """Raised when VPN configuration conflicts with SecBox configuration."""
 
 
-def validate_vpn_config(config: SecBoxConfig) -> None:
-    vpn = config.vpn
+def validate_vpn_against_interfaces(
+    vpn: VpnConfig | None,
+    physical_interfaces: Collection[str],
+) -> None:
+    """Validate VPN configuration against known physical interfaces.
+
+    This function intentionally does not access the filesystem except for
+    syntactic Path checks. It is safe to use for Web configuration previews.
+    """
 
     if vpn is None or not vpn.enabled:
         return
 
-    physical_interfaces = {
-        interface.name
-        for interface in config.network.interfaces
-    }
+    interfaces = set(physical_interfaces)
 
     for tunnel in vpn.tunnels:
         if not tunnel.enabled:
             continue
 
-        if tunnel.interface in physical_interfaces:
+        if tunnel.interface in interfaces:
             raise VpnValidationError(
                 f"VPN interface {tunnel.interface!r} conflicts "
                 "with a configured physical interface"
@@ -44,6 +50,18 @@ def validate_vpn_config(config: SecBoxConfig) -> None:
                 f"preshared key path for tunnel {tunnel.name!r} "
                 "must be absolute"
             )
+
+
+def validate_vpn_config(config: SecBoxConfig) -> None:
+    """Validate VPN configuration against the full SecBox configuration."""
+
+    validate_vpn_against_interfaces(
+        config.vpn,
+        {
+            interface.name
+            for interface in config.network.interfaces
+        },
+    )
 
 
 def validate_vpn_key_paths(

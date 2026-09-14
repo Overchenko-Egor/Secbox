@@ -518,3 +518,168 @@ def test_network_status_returns_managed_interface_roles(
         ("ens36", "lan"),
         ("ens37", "unused"),
     ]
+
+
+def vpn_candidate_payload(
+    interface: str = "wg0",
+) -> dict[str, object]:
+    return {
+        "vpn": {
+            "enabled": True,
+            "tunnels": [
+                {
+                    "name": "primary",
+                    "enabled": True,
+                    "interface": interface,
+                    "address": "10.200.0.2/30",
+                    "private_key_file": "/etc/secbox/vpn/wg0.key",
+                    "mtu": 1420,
+                    "priority": 100,
+                    "routing_table": 200,
+                    "source_networks": [
+                        "192.168.50.0/24",
+                    ],
+                    "health_probe": "10.200.0.1",
+                    "peer": {
+                        "public_key": "peer-public-key",
+                        "endpoint": "192.168.1.108:51820",
+                        "allowed_ips": [
+                            "0.0.0.0/0",
+                        ],
+                        "persistent_keepalive": 25,
+                    },
+                }
+            ],
+        }
+    }
+
+
+def vpn_network_metadata() -> NetworkRuntimeMetadata:
+    return NetworkRuntimeMetadata(
+        interfaces=[
+            NetworkManagedInterface(
+                name="ens33",
+                role="wan",
+                ipv4_method="dhcp",
+            ),
+            NetworkManagedInterface(
+                name="ens36",
+                role="lan",
+                ipv4_method="static",
+            ),
+            NetworkManagedInterface(
+                name="ens38",
+                role="mgmt",
+                ipv4_method="static",
+            ),
+        ]
+    )
+
+
+def test_vpn_config_validate_accepts_candidate(
+    client: TestClient,
+    monkeypatch: MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        NetworkRuntimeStore,
+        "load",
+        lambda self: vpn_network_metadata(),
+    )
+
+    response = client.post(
+        "/api/v1/vpn/config/validate",
+        json=vpn_candidate_payload(),
+    )
+
+    assert response.status_code == 200, response.text
+
+    body = response.json()
+
+    assert body["valid"] is True
+    assert body["vpn"]["enabled"] is True
+    assert body["vpn"]["tunnels"][0]["interface"] == "wg0"
+
+
+def test_vpn_config_validate_rejects_physical_interface(
+    client: TestClient,
+    monkeypatch: MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        NetworkRuntimeStore,
+        "load",
+        lambda self: vpn_network_metadata(),
+    )
+
+    response = client.post(
+        "/api/v1/vpn/config/validate",
+        json=vpn_candidate_payload(
+            interface="ens33",
+        ),
+    )
+
+    assert response.status_code == 422
+
+    assert (
+        "conflicts with a configured physical interface"
+        in response.text
+    )
+
+
+def test_vpn_config_validate_requires_network_metadata(
+    client: TestClient,
+    monkeypatch: MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        NetworkRuntimeStore,
+        "load",
+        lambda self: None,
+    )
+
+    response = client.post(
+        "/api/v1/vpn/config/validate",
+        json=vpn_candidate_payload(),
+    )
+
+    assert response.status_code == 409
+
+
+def test_vpn_config_validate_requires_auth(
+    client: TestClient,
+    monkeypatch: MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        NetworkRuntimeStore,
+        "load",
+        lambda self: vpn_network_metadata(),
+    )
+
+    response = client.post(
+        "/api/v1/vpn/config/validate",
+        json=vpn_candidate_payload(),
+        auth=None,
+    )
+
+    assert response.status_code == 401
+
+
+def test_vpn_config_validate_does_not_modify_config(
+    client: TestClient,
+    config_path: Path,
+    monkeypatch: MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        NetworkRuntimeStore,
+        "load",
+        lambda self: vpn_network_metadata(),
+    )
+
+    before = config_path.read_bytes()
+
+    response = client.post(
+        "/api/v1/vpn/config/validate",
+        json=vpn_candidate_payload(),
+    )
+
+    assert response.status_code == 200
+    assert config_path.read_bytes() == before
+    assert not config_path.with_suffix(".yml.bak").exists()

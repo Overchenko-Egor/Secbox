@@ -124,6 +124,10 @@ from secbox.modules.vpn.state import (
 from secbox.modules.vpn.firewall import (
     get_vpn_firewall_interfaces,
 )
+from secbox.modules.vpn.service import (
+    VpnServiceError,
+    apply_vpn_config,
+)
 
 from secbox.modules.blacklist.service import (
     BlacklistError,
@@ -799,56 +803,7 @@ def vpn_apply() -> None:
 
     try:
         config = _store().load()
-
-        if config.vpn is None:
-            _fail("VPN configuration is not defined")
-
-        validate_vpn_config(config)
-
-        if not config.vpn.enabled:
-            _fail("VPN is disabled")
-
-        validate_vpn_key_paths(config)
-
-        applied = 0
-        enabled_tunnels = [
-            tunnel
-            for tunnel in config.vpn.tunnels
-            if tunnel.enabled
-        ]
-
-        if not enabled_tunnels:
-            _fail("VPN has no enabled tunnels")
-
-        for tunnel in config.vpn.tunnels:
-            if not tunnel.enabled:
-                continue
-
-            apply_wireguard_tunnel(tunnel)
-
-            console.print(
-                f"[green]Applied VPN tunnel:[/green] "
-                f"{tunnel.name} ({tunnel.interface})"
-            )
-
-            applied += 1
-
-        configure_pool_policy(enabled_tunnels)
-
-        initial_tunnel = min(
-            enabled_tunnels,
-            key=lambda tunnel: tunnel.priority,
-        )
-        activate_tunnel(initial_tunnel)
-
-        console.print(
-            f"[green]Active VPN tunnel:[/green] "
-            f"{initial_tunnel.name} ({initial_tunnel.interface})"
-        )
-
-        console.print(
-            f"[green]Applied VPN tunnels:[/green] {applied}"
-        )
+        result = apply_vpn_config(config)
 
     except (
         ConfigStoreError,
@@ -856,9 +811,20 @@ def vpn_apply() -> None:
         VpnApplyError,
         VpnRoutingError,
         VpnFailoverError,
+        VpnServiceError,
         OSError,
     ) as error:
         _fail(str(error))
+
+    console.print(
+        f"[green]Active VPN tunnel:[/green] "
+        f"{result.active_name} ({result.active_interface})"
+    )
+
+    console.print(
+        f"[green]Applied VPN tunnels:[/green] "
+        f"{result.applied_tunnels}"
+    )
 
 
 

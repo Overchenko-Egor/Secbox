@@ -40,6 +40,12 @@ from secbox.modules.vpn.runtime import (
 )
 from secbox.web.monitoring import ServiceStatus, SystemStatus, service_statuses, system_status
 from secbox.web.preview import ConfigPreview, preview_config
+from secbox.web.vpn_config import (
+    VpnConfigPreviewRequest,
+    VpnConfigPreviewResponse,
+    VpnValidationError,
+    validate_vpn_candidate,
+)
 from secbox.web.settings import WebSettings
 
 logger = logging.getLogger(__name__)
@@ -152,6 +158,49 @@ def create_app(settings: WebSettings | None = None) -> FastAPI:
     def services() -> list[ServiceStatus]:
         """Report systemd states, not whether a ruleset protects traffic."""
         return service_statuses()
+
+    @router.post(
+        "/api/v1/vpn/config/validate",
+        tags=["vpn"],
+    )
+    def validate_vpn_web_config(
+        request: VpnConfigPreviewRequest,
+    ) -> VpnConfigPreviewResponse:
+        """Validate VPN configuration without changing persistent state."""
+
+        try:
+            metadata = network_runtime_store.load()
+        except NetworkRuntimeError as error:
+            logger.warning(
+                "Network runtime metadata read failed during VPN validation: %s",
+                error,
+            )
+            raise HTTPException(
+                503,
+                "Network runtime metadata is not readable",
+            ) from error
+
+        if metadata is None:
+            raise HTTPException(
+                409,
+                "Network configuration must be applied before VPN validation",
+            )
+
+        physical_interfaces = {
+            interface.name
+            for interface in metadata.interfaces
+        }
+
+        try:
+            return validate_vpn_candidate(
+                request.vpn,
+                physical_interfaces,
+            )
+        except VpnValidationError as error:
+            raise HTTPException(
+                422,
+                str(error),
+            ) from error
 
     @router.get("/api/v1/vpn/status", tags=["vpn"])
     def vpn_status() -> VpnRuntimeState:
