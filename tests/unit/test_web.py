@@ -396,3 +396,19 @@ def test_vpn_events_read_failure_returns_503(
         "private event filesystem detail"
         not in response.text
     )
+
+
+def test_panel_contains_vpn_dashboard(client: TestClient) -> None:
+    html = client.get("/").text
+    javascript = client.get("/assets/app.js").text
+
+    assert 'id="vpn"' in html
+    assert 'id="vpn-active"' in html
+    assert 'id="vpn-tunnels"' in html
+    assert 'id="vpn-events"' in html
+
+    assert 'api("vpn/status")' not in javascript
+    assert '"vpn/status"' in javascript
+    assert '"vpn/events?limit=10"' in javascript
+    assert "drawVpnStatus" in javascript
+    assert "drawVpnEvents" in javascript

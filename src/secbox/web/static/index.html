@@ -12,8 +12,9 @@
     <a class="brand" href="#overview"><span class="brand-mark">S</span> SecBox</a>
     <p class="eyebrow">Управление шлюзом</p>
     <nav aria-label="Разделы">
-      <a href="#overview">Обзор</a><a href="#network">Сеть и маршруты</a>
-      <a href="#services">Сервисы</a><a href="#configuration">Конфигурация</a>
+      <a href="#overview">Обзор</a><a href="#vpn">VPN</a>
+      <a href="#network">Сеть и маршруты</a><a href="#services">Сервисы</a>
+      <a href="#configuration">Конфигурация</a>
     </nav>
     <div class="aside-note">● Просмотр и проверка<small>Изменения сети выполняются через CLI.</small></div>
   </aside>
@@ -29,6 +30,43 @@
       <article class="metric"><span>Используется памяти</span><strong id="memory">—</strong><small id="memory-total">Данные Linux /proc</small></article>
       <article class="metric"><span>Сетевые интерфейсы</span><strong id="interface-count">—</strong><small>Без loopback</small></article>
     </section>
+    <section id="vpn" class="panel vpn-panel">
+      <div class="section-heading">
+        <div>
+          <p class="eyebrow">Отказоустойчивый канал</p>
+          <h2>VPN Pool</h2>
+        </div>
+        <span id="vpn-active-tag" class="tag">Активный: —</span>
+      </div>
+
+      <p class="hint">
+        Текущее состояние WireGuard-туннелей и история автоматического
+        переключения маршрута для LAN.
+      </p>
+
+      <p id="vpn-error" class="error" role="status"></p>
+
+      <div class="vpn-summary">
+        <article class="vpn-active-card">
+          <span class="vpn-label">Активный туннель</span>
+          <strong id="vpn-active">—</strong>
+          <small id="vpn-observed">Данные ещё не получены</small>
+          <p id="vpn-reason" class="vpn-reason">—</p>
+        </article>
+
+        <div id="vpn-tunnels" class="vpn-tunnels"></div>
+      </div>
+
+      <div class="vpn-events-heading">
+        <h3>Последние переключения</h3>
+        <span id="vpn-event-count" class="tag">0 событий</span>
+      </div>
+
+      <div id="vpn-events" class="vpn-events">
+        <p class="hint">История переключений пока пуста.</p>
+      </div>
+    </section>
+
     <section id="network" class="panel">
       <div class="section-heading"><div><p class="eyebrow">Сеть</p><h2>Интерфейсы</h2></div><span class="tag">Текущее состояние</span></div>
       <p id="network-error" class="error" role="status"></p>
