@@ -12,7 +12,7 @@ from pydantic import BaseModel
 SERVICE_UNITS = (
     "systemd-networkd.service",
     "dnsmasq.service",
-    "nftables.service",
+    "secbox-firewall.service",
     "suricata.service",
     "secbox-ids.service",
     "secbox-vpn.service",

@@ -412,3 +412,25 @@ def test_panel_contains_vpn_dashboard(client: TestClient) -> None:
     assert '"vpn/events?limit=10"' in javascript
     assert "drawVpnStatus" in javascript
     assert "drawVpnEvents" in javascript
+
+
+def test_panel_contains_system_overview(client: TestClient) -> None:
+    html = client.get("/").text
+    javascript = client.get("/assets/app.js").text
+
+    for element_id in [
+        'id="system-health"',
+        'id="firewall-health"',
+        'id="ids-health"',
+        'id="overview-vpn-health"',
+        'id="network-health"',
+        'id="attention-panel"',
+        'id="attention-list"',
+    ]:
+        assert element_id in html
+
+    assert "drawOverview" in javascript
+    assert "drawAttention" in javascript
+    assert "nftables.service" in javascript
+    assert "suricata.service" in javascript
+    assert "secbox-ids.service" in javascript

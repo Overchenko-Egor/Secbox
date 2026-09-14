@@ -232,6 +232,331 @@ function drawVpnEvents(events) {
   }
 }
 
+function findService(services, name) {
+  return (services || []).find((item) => item.name === name);
+}
+
+function serviceIsActive(service) {
+  return service &&
+    !service.error &&
+    service.load_state === "loaded" &&
+    service.active_state === "active";
+}
+
+function setComponentStatus(id, status, label) {
+  const element = byId(id);
+  element.className = `component-status ${status}`;
+  element.textContent = label;
+}
+
+function addAttention(items, severity, title, detail) {
+  items.push({severity, title, detail});
+}
+
+function drawOverview(snapshot) {
+  const services = snapshot["services"];
+  const interfaces = snapshot["network/interfaces"];
+  const vpn = snapshot["vpn/status"];
+
+  const attention = [];
+
+  let firewallLevel = "unknown";
+  let idsLevel = "unknown";
+  let vpnLevel = "unknown";
+  let networkLevel = "unknown";
+
+  /*
+   * Firewall
+   *
+   * This reports the systemd service state only. It intentionally does not
+   * claim that the currently loaded nftables rules are semantically correct.
+   */
+  if (services) {
+    const nftables = findService(services, "nftables.service");
+
+    if (serviceIsActive(nftables)) {
+      firewallLevel = "healthy";
+      setComponentStatus("firewall-health", "healthy", "ACTIVE");
+      byId("firewall-summary").textContent = "Сервис активен";
+      byId("firewall-detail").textContent = "nftables.service · active";
+    } else if (nftables) {
+      firewallLevel = "critical";
+      setComponentStatus("firewall-health", "critical", "INACTIVE");
+      byId("firewall-summary").textContent = "Сервис не активен";
+      byId("firewall-detail").textContent =
+        `${nftables.active_state || "unknown"} / ${nftables.sub_state || "unknown"}`;
+
+      addAttention(
+        attention,
+        "critical",
+        "Firewall",
+        `nftables.service: ${nftables.active_state || "unknown"} / ${nftables.sub_state || "unknown"}`,
+      );
+    }
+
+    const suricata = findService(services, "suricata.service");
+    const idsProcessor = findService(services, "secbox-ids.service");
+
+    if (serviceIsActive(suricata) && serviceIsActive(idsProcessor)) {
+      idsLevel = "healthy";
+      setComponentStatus("ids-health", "healthy", "ACTIVE");
+      byId("ids-summary").textContent = "IDS работает";
+      byId("ids-detail").textContent = "Suricata + event processor";
+    } else {
+      idsLevel = "critical";
+      setComponentStatus("ids-health", "critical", "INACTIVE");
+      byId("ids-summary").textContent = "IDS работает не полностью";
+
+      const failed = [suricata, idsProcessor]
+        .filter((item) => !serviceIsActive(item))
+        .map((item) => item?.name || "unknown");
+
+      byId("ids-detail").textContent = failed.join(", ");
+
+      addAttention(
+        attention,
+        "critical",
+        "IDS",
+        `Неактивные компоненты: ${failed.join(", ")}`,
+      );
+    }
+
+    for (const service of services) {
+      if (
+        service.name === "nftables.service" ||
+        service.name === "suricata.service" ||
+        service.name === "secbox-ids.service"
+      ) {
+        continue;
+      }
+
+      if (service.error) {
+        addAttention(
+          attention,
+          "warning",
+          service.name,
+          "Не удалось определить состояние systemd-сервиса",
+        );
+      } else if (
+        service.load_state !== "not-found" &&
+        service.active_state !== "active"
+      ) {
+        addAttention(
+          attention,
+          "warning",
+          service.name,
+          `${service.active_state || "unknown"} / ${service.sub_state || "unknown"}`,
+        );
+      }
+    }
+  }
+
+  /*
+   * VPN
+   */
+  if (vpn) {
+    const active = vpn.tunnels.find(
+      (tunnel) => tunnel.interface === vpn.active_interface
+    );
+
+    const down = vpn.tunnels.filter(
+      (tunnel) => tunnel.status === "down"
+    );
+
+    const degraded = vpn.tunnels.filter(
+      (tunnel) => tunnel.status === "degraded"
+    );
+
+    if (!active || active.status === "down") {
+      vpnLevel = "critical";
+      setComponentStatus(
+        "overview-vpn-health",
+        "critical",
+        "DOWN",
+      );
+      byId("overview-vpn-summary").textContent =
+        vpn.active_interface
+          ? `${vpn.active_interface} недоступен`
+          : "Нет активного туннеля";
+
+      addAttention(
+        attention,
+        "critical",
+        "VPN",
+        vpn.reason || "Нет доступного активного VPN-туннеля",
+      );
+    } else if (active.status === "degraded" || down.length || degraded.length) {
+      vpnLevel = "warning";
+      setComponentStatus(
+        "overview-vpn-health",
+        "warning",
+        "DEGRADED",
+      );
+
+      byId("overview-vpn-summary").textContent =
+        `${vpn.active_interface} активен`;
+
+      const affected = [...down, ...degraded]
+        .map((tunnel) => `${tunnel.name} (${tunnel.interface})`)
+        .join(", ");
+
+      addAttention(
+        attention,
+        "warning",
+        "VPN Pool",
+        affected
+          ? `Проблемы: ${affected}`
+          : vpn.reason,
+      );
+    } else {
+      vpnLevel = "healthy";
+      setComponentStatus(
+        "overview-vpn-health",
+        "healthy",
+        "HEALTHY",
+      );
+      byId("overview-vpn-summary").textContent =
+        `${vpn.active_interface} активен`;
+    }
+
+    byId("overview-vpn-detail").textContent =
+      `${vpn.tunnels.length} туннеля · active ${vpn.active_interface || "—"}`;
+  }
+
+  /*
+   * Network
+   */
+  if (interfaces) {
+    const physical = interfaces.filter(
+      (item) =>
+        !item.is_loopback &&
+        !item.name.startsWith("wg")
+    );
+
+    /*
+     * Until the runtime API exposes interface roles, an administratively
+     * unused physical interface must not make the whole appliance degraded.
+     */
+    const relevant = physical.filter(
+      (item) => String(item.operstate).toUpperCase() === "UP"
+    );
+
+    const failed = relevant.filter(
+      (item) => String(item.operstate).toUpperCase() !== "UP"
+    );
+
+    if (!relevant.length) {
+      networkLevel = "unknown";
+      setComponentStatus("network-health", "unknown", "UNKNOWN");
+      byId("network-summary").textContent = "Нет данных";
+      byId("network-detail").textContent = "Интерфейсы не обнаружены";
+    } else if (failed.length) {
+      networkLevel = "warning";
+      setComponentStatus("network-health", "warning", "DEGRADED");
+      byId("network-summary").textContent =
+        `${relevant.length - failed.length}/${relevant.length} UP`;
+      byId("network-detail").textContent =
+        `Неактивны: ${failed.map((item) => item.name).join(", ")}`;
+
+      addAttention(
+        attention,
+        "warning",
+        "Network",
+        `Интерфейсы не UP: ${failed.map((item) => item.name).join(", ")}`,
+      );
+    } else {
+      networkLevel = "healthy";
+      setComponentStatus("network-health", "healthy", "HEALTHY");
+      byId("network-summary").textContent =
+        `${relevant.length}/${relevant.length} UP`;
+      byId("network-detail").textContent =
+        "Все обнаруженные интерфейсы активны";
+    }
+  }
+
+  const levels = [
+    firewallLevel,
+    idsLevel,
+    vpnLevel,
+    networkLevel,
+  ];
+
+  const global = byId("system-health");
+
+  if (levels.includes("critical")) {
+    global.className = "health-badge critical";
+    global.textContent = "● Требуется вмешательство";
+  } else if (levels.includes("warning")) {
+    global.className = "health-badge warning";
+    global.textContent = "● Требует внимания";
+  } else if (
+    levels.length &&
+    levels.every((level) => level === "healthy")
+  ) {
+    global.className = "health-badge healthy";
+    global.textContent = "● Система работает штатно";
+  } else {
+    global.className = "health-badge unknown";
+    global.textContent = "● Состояние определено не полностью";
+  }
+
+  drawAttention(attention);
+}
+
+function drawAttention(items) {
+  const target = byId("attention-list");
+  target.replaceChildren();
+
+  byId("attention-count").textContent =
+    items.length
+      ? `${items.length} проблем`
+      : "Нет проблем";
+
+  if (!items.length) {
+    const clean = document.createElement("div");
+    clean.className = "attention-clean";
+
+    const icon = document.createElement("span");
+    icon.textContent = "✓";
+
+    const text = document.createElement("div");
+
+    const title = document.createElement("strong");
+    title.textContent = "Критических проблем не обнаружено";
+
+    const detail = document.createElement("small");
+    detail.textContent =
+      "Все контролируемые компоненты находятся в штатном состоянии.";
+
+    text.append(title, detail);
+    clean.append(icon, text);
+    target.append(clean);
+    return;
+  }
+
+  for (const item of items) {
+    const row = document.createElement("div");
+    row.className = `attention-item ${item.severity}`;
+
+    const marker = document.createElement("span");
+    marker.className = "attention-marker";
+    marker.textContent =
+      item.severity === "critical" ? "!" : "⚠";
+
+    const content = document.createElement("div");
+
+    const title = document.createElement("strong");
+    title.textContent = item.title;
+
+    const detail = document.createElement("span");
+    detail.textContent = item.detail;
+
+    content.append(title, detail);
+    row.append(marker, content);
+    target.append(row);
+  }
+}
+
 async function refresh() {
   byId("refresh").disabled = true;
   const jobs = [
@@ -244,14 +569,24 @@ async function refresh() {
     ["vpn/status", "vpn-error", drawVpnStatus],
     ["vpn/events?limit=10", "vpn-error", drawVpnEvents],
   ];
+  const snapshot = {};
+
   await Promise.all(jobs.map(async ([path, errorId, draw]) => {
     byId(errorId).textContent = "";
-    try { draw(await api(path)); }
-    catch (error) {
-      byId(errorId).textContent = `Не удалось обновить данные: ${error.message}. Предыдущие данные, если есть, могут устареть.`;
+
+    try {
+      const data = await api(path);
+      snapshot[path] = data;
+      draw(data);
+    } catch (error) {
+      byId(errorId).textContent =
+        `Не удалось обновить данные: ${error.message}. ` +
+        "Предыдущие данные, если есть, могут устареть.";
       byId(errorId).className = "error";
     }
   }));
+
+  drawOverview(snapshot);
   byId("refresh").disabled = false;
 }
 

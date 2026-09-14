@@ -23,7 +23,7 @@ def test_service_states_distinguish_missing_and_inactive(monkeypatch: MonkeyPatc
         return subprocess.CompletedProcess(command, 0, stdout=(
             "Id=systemd-networkd.service\nLoadState=loaded\nActiveState=active\nSubState=running\n\n"
             "Id=dnsmasq.service\nLoadState=not-found\nActiveState=inactive\nSubState=dead\n\n"
-            "Id=nftables.service\nLoadState=loaded\nActiveState=inactive\nSubState=dead\n"
+            "Id=secbox-firewall.service\nLoadState=loaded\nActiveState=active\nSubState=exited\n"
         ))
 
     monkeypatch.setattr(subprocess, "run", fake_run)
@@ -31,7 +31,8 @@ def test_service_states_distinguish_missing_and_inactive(monkeypatch: MonkeyPatc
     assert statuses[0].active_state == "active"
     assert statuses[1].load_state == "not-found"
     assert statuses[2].load_state == "loaded"
-    assert statuses[2].active_state == "inactive"
+    assert statuses[2].active_state == "active"
+    assert statuses[2].sub_state == "exited"
     assert statuses[3].error is not None
 
 
@@ -45,3 +46,8 @@ def test_systemd_timeout_yields_unknown(monkeypatch: MonkeyPatch) -> None:
 
 def test_vpn_service_is_monitored() -> None:
     assert "secbox-vpn.service" in SERVICE_UNITS
+
+
+def test_secbox_firewall_service_is_monitored() -> None:
+    assert "secbox-firewall.service" in SERVICE_UNITS
+    assert "nftables.service" not in SERVICE_UNITS

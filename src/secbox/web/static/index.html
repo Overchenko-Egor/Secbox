@@ -21,15 +21,76 @@
   <main>
     <header id="overview">
       <div><p class="eyebrow">Состояние системы</p><h1 id="hostname">SecBox</h1><p id="observed">Загрузка данных…</p></div>
-      <button id="refresh" type="button">Обновить</button>
+      <div class="header-actions">
+        <span id="system-health" class="health-badge unknown">
+          ● Проверка состояния
+        </span>
+        <button id="refresh" type="button">Обновить</button>
+      </div>
     </header>
     <p id="global-message" role="status" aria-live="polite"></p>
+    <section class="health-grid" aria-label="Состояние компонентов">
+      <article class="health-card" id="firewall-health-card">
+        <div class="health-card-top">
+          <span class="health-icon">FW</span>
+          <span id="firewall-health" class="component-status unknown">UNKNOWN</span>
+        </div>
+        <h3>Firewall</h3>
+        <strong id="firewall-summary">Проверка…</strong>
+        <small id="firewall-detail">nftables.service</small>
+      </article>
+
+      <article class="health-card" id="ids-health-card">
+        <div class="health-card-top">
+          <span class="health-icon">IDS</span>
+          <span id="ids-health" class="component-status unknown">UNKNOWN</span>
+        </div>
+        <h3>IDS</h3>
+        <strong id="ids-summary">Проверка…</strong>
+        <small id="ids-detail">Suricata / SecBox IDS</small>
+      </article>
+
+      <article class="health-card" id="vpn-health-card">
+        <div class="health-card-top">
+          <span class="health-icon">VPN</span>
+          <span id="overview-vpn-health" class="component-status unknown">UNKNOWN</span>
+        </div>
+        <h3>VPN</h3>
+        <strong id="overview-vpn-summary">Проверка…</strong>
+        <small id="overview-vpn-detail">VPN pool</small>
+      </article>
+
+      <article class="health-card" id="network-health-card">
+        <div class="health-card-top">
+          <span class="health-icon">NET</span>
+          <span id="network-health" class="component-status unknown">UNKNOWN</span>
+        </div>
+        <h3>Network</h3>
+        <strong id="network-summary">Проверка…</strong>
+        <small id="network-detail">Сетевые интерфейсы</small>
+      </article>
+    </section>
+
     <section class="metrics" aria-label="Показатели системы">
       <article class="metric"><span>Время работы</span><strong id="uptime">—</strong><small>С момента загрузки</small></article>
       <article class="metric"><span>Нагрузка системы</span><strong id="load">—</strong><small>Средняя за 1 / 5 / 15 минут</small></article>
       <article class="metric"><span>Используется памяти</span><strong id="memory">—</strong><small id="memory-total">Данные Linux /proc</small></article>
       <article class="metric"><span>Сетевые интерфейсы</span><strong id="interface-count">—</strong><small>Без loopback</small></article>
     </section>
+    <section id="attention-panel" class="panel attention-panel">
+      <div class="section-heading">
+        <div>
+          <p class="eyebrow">Контроль состояния</p>
+          <h2>Требует внимания</h2>
+        </div>
+        <span id="attention-count" class="tag">Проверка…</span>
+      </div>
+
+      <div id="attention-list" class="attention-list">
+        <p class="hint">Выполняется анализ состояния SecBox…</p>
+      </div>
+    </section>
+
     <section id="vpn" class="panel vpn-panel">
       <div class="section-heading">
         <div>
