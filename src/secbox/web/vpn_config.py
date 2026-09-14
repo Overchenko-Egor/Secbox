@@ -51,3 +51,15 @@ __all__ = [
     "VpnValidationError",
     "validate_vpn_candidate",
 ]
+
+
+class VpnConfigApplyResponse(BaseModel):
+    """Result returned after committing VPN configuration."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    applied: bool
+    applied_tunnels: int
+    removed_tunnels: int
+    active_name: str | None
+    active_interface: str | None

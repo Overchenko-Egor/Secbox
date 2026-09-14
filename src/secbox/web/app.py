@@ -40,9 +40,16 @@ from secbox.modules.vpn.runtime import (
 )
 from secbox.web.monitoring import ServiceStatus, SystemStatus, service_statuses, system_status
 from secbox.web.preview import ConfigPreview, preview_config
+from secbox.web.actions import (
+    WebActionBusyError,
+    WebActionError,
+    WebActionTimeoutError,
+    apply_vpn_via_helper,
+)
 from secbox.web.vpn_config import (
     VpnConfigPreviewRequest,
     VpnConfigPreviewResponse,
+    VpnConfigApplyResponse,
     VpnValidationError,
     validate_vpn_candidate,
 )
@@ -201,6 +208,87 @@ def create_app(settings: WebSettings | None = None) -> FastAPI:
                 422,
                 str(error),
             ) from error
+
+    @router.put(
+        "/api/v1/vpn/config",
+        tags=["vpn"],
+    )
+    def apply_vpn_web_config(
+        request: VpnConfigPreviewRequest,
+    ) -> VpnConfigApplyResponse:
+        """Validate and transactionally apply VPN configuration."""
+
+        try:
+            metadata = network_runtime_store.load()
+        except NetworkRuntimeError as error:
+            logger.warning(
+                "Network runtime metadata read failed during VPN apply: %s",
+                error,
+            )
+            raise HTTPException(
+                503,
+                "Network runtime metadata is not readable",
+            ) from error
+
+        if metadata is None:
+            raise HTTPException(
+                409,
+                "Network configuration must be applied before VPN changes",
+            )
+
+        physical_interfaces = {
+            interface.name
+            for interface in metadata.interfaces
+        }
+
+        try:
+            validate_vpn_candidate(
+                request.vpn,
+                physical_interfaces,
+            )
+
+        except VpnValidationError as error:
+            raise HTTPException(
+                422,
+                str(error),
+            ) from error
+
+        try:
+            result = apply_vpn_via_helper(
+                request.vpn
+            )
+
+        except WebActionBusyError as error:
+            raise HTTPException(
+                409,
+                "Another configuration change is already running",
+            ) from error
+
+        except WebActionTimeoutError as error:
+            logger.error(
+                "Privileged VPN action timed out"
+            )
+            raise HTTPException(
+                504,
+                "VPN configuration action timed out",
+            ) from error
+
+        except WebActionError as error:
+            logger.error(
+                "Privileged VPN action failed"
+            )
+            raise HTTPException(
+                500,
+                "VPN configuration could not be applied",
+            ) from error
+
+        return VpnConfigApplyResponse(
+            applied=True,
+            applied_tunnels=result.applied_tunnels,
+            removed_tunnels=result.removed_tunnels,
+            active_name=result.active_name,
+            active_interface=result.active_interface,
+        )
 
     @router.get("/api/v1/vpn/status", tags=["vpn"])
     def vpn_status() -> VpnRuntimeState:

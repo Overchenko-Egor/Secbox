@@ -1,0 +1,44 @@
+[Unit]
+Description=SecBox Privileged Action Worker
+After=network.target
+
+[Service]
+Type=exec
+
+User=root
+Group=root
+
+WorkingDirectory=/home/egor/dev/secbox
+
+Environment=SECBOX_CONFIG_PATH=/etc/secbox/config.yml
+Environment=PYTHONUNBUFFERED=1
+Environment=PYTHONDONTWRITEBYTECODE=1
+
+ExecStart=/home/egor/dev/secbox/.venv/bin/secbox-action socket-request
+
+StandardInput=socket
+StandardOutput=socket
+StandardError=journal
+
+NoNewPrivileges=true
+
+PrivateTmp=true
+ProtectHome=read-only
+ProtectSystem=strict
+
+ReadWritePaths=/etc/secbox
+ReadWritePaths=/run/secbox
+ReadWritePaths=/var/lib/secbox
+
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+
+RestrictSUIDSGID=true
+LockPersonality=true
+
+RestrictAddressFamilies=AF_UNIX AF_INET AF_NETLINK
+
+SystemCallArchitectures=native
+
+UMask=0077

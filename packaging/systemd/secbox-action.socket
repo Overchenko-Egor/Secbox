@@ -1,0 +1,13 @@
+[Unit]
+Description=SecBox Privileged Action Socket
+
+[Socket]
+ListenStream=/run/secbox/action.sock
+SocketUser=root
+SocketGroup=secbox-web
+SocketMode=0660
+Accept=yes
+RemoveOnStop=true
+
+[Install]
+WantedBy=sockets.target

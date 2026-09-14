@@ -683,3 +683,109 @@ def test_vpn_config_validate_does_not_modify_config(
     assert response.status_code == 200
     assert config_path.read_bytes() == before
     assert not config_path.with_suffix(".yml.bak").exists()
+
+
+def test_vpn_config_put_applies_valid_candidate(
+    client: TestClient,
+    monkeypatch: MonkeyPatch,
+) -> None:
+    from secbox.web.actions import WebVpnApplyResult
+
+    monkeypatch.setattr(
+        NetworkRuntimeStore,
+        "load",
+        lambda self: vpn_network_metadata(),
+    )
+
+    monkeypatch.setattr(
+        "secbox.web.app.apply_vpn_via_helper",
+        lambda vpn: WebVpnApplyResult(
+            applied_tunnels=1,
+            removed_tunnels=0,
+            active_name="primary",
+            active_interface="wg0",
+        ),
+    )
+
+    response = client.put(
+        "/api/v1/vpn/config",
+        json=vpn_candidate_payload(),
+    )
+
+    assert response.status_code == 200, response.text
+
+    body = response.json()
+
+    assert body["applied"] is True
+    assert body["applied_tunnels"] == 1
+    assert body["removed_tunnels"] == 0
+    assert body["active_interface"] == "wg0"
+
+
+def test_vpn_config_put_requires_auth(
+    client: TestClient,
+    monkeypatch: MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        NetworkRuntimeStore,
+        "load",
+        lambda self: vpn_network_metadata(),
+    )
+
+    response = client.put(
+        "/api/v1/vpn/config",
+        json=vpn_candidate_payload(),
+        auth=None,
+    )
+
+    assert response.status_code == 401
+
+
+def test_vpn_config_put_rejects_physical_interface(
+    client: TestClient,
+    monkeypatch: MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        NetworkRuntimeStore,
+        "load",
+        lambda self: vpn_network_metadata(),
+    )
+
+    response = client.put(
+        "/api/v1/vpn/config",
+        json=vpn_candidate_payload(
+            interface="ens33"
+        ),
+    )
+
+    assert response.status_code == 422
+
+
+def test_vpn_config_put_reports_busy_action(
+    client: TestClient,
+    monkeypatch: MonkeyPatch,
+) -> None:
+    from secbox.web.actions import WebActionBusyError
+
+    monkeypatch.setattr(
+        NetworkRuntimeStore,
+        "load",
+        lambda self: vpn_network_metadata(),
+    )
+
+    def busy(vpn):
+        raise WebActionBusyError(
+            "busy"
+        )
+
+    monkeypatch.setattr(
+        "secbox.web.app.apply_vpn_via_helper",
+        busy,
+    )
+
+    response = client.put(
+        "/api/v1/vpn/config",
+        json=vpn_candidate_payload(),
+    )
+
+    assert response.status_code == 409

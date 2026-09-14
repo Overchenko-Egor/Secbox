@@ -49,3 +49,4 @@ packages = ["secbox"]
 
 [project.scripts]
 secboxctl = "secbox.cli:app"
+secbox-action = "secbox.actions.cli:app"

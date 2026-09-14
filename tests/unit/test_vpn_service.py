@@ -40,7 +40,7 @@ def tunnel(
             if interface == "wg0"
             else "10.201.0.2/30"
         ),
-        "private_key_file": f"/key-{interface}",
+        "private_key_file": f"/etc/secbox/vpn/{interface}.key",
         "priority": priority,
         "routing_table": table,
         "source_networks": (
