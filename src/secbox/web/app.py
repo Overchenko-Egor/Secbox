@@ -24,6 +24,12 @@ from secbox.modules.network.discovery import NetworkDiscoveryError, discover_int
 from secbox.modules.network.renderer import NetworkRenderError
 from secbox.modules.network.routes import NetworkRoute, RouteDiscoveryError, discover_ipv4_routes
 from secbox.modules.network.state import NetworkInterfaceState
+from secbox.modules.network.runtime import (
+    NetworkRuntimeError,
+    NetworkRuntimeStore,
+    NetworkStatus,
+    build_network_status,
+)
 from secbox.modules.network.validator import NetworkPreflightError
 from secbox.modules.vpn.runtime import (
     VpnEventStore,
@@ -79,6 +85,7 @@ def create_app(settings: WebSettings | None = None) -> FastAPI:
     store = ConfigStore(settings.config_path)
     vpn_runtime_store = VpnRuntimeStore()
     vpn_event_store = VpnEventStore()
+    network_runtime_store = NetworkRuntimeStore()
     security = HTTPBasic(realm="SecBox")
     app = FastAPI(
         title="SecBox Management API", version=__version__,
@@ -190,6 +197,44 @@ def create_app(settings: WebSettings | None = None) -> FastAPI:
                 503,
                 "VPN event history is not readable",
             ) from error
+
+    @router.get("/api/v1/network/status", tags=["network"])
+    def network_status() -> NetworkStatus:
+        """Return live status of SecBox-managed network interfaces."""
+        try:
+            metadata = network_runtime_store.load()
+        except NetworkRuntimeError as error:
+            logger.warning(
+                "Network runtime metadata read failed: %s",
+                error,
+            )
+            raise HTTPException(
+                503,
+                "Network runtime metadata is not readable",
+            ) from error
+
+        if metadata is None:
+            raise HTTPException(
+                404,
+                "Network runtime metadata is not available yet",
+            )
+
+        try:
+            runtime_interfaces = discover_interfaces()
+        except NetworkDiscoveryError as error:
+            logger.warning(
+                "Interface discovery failed: %s",
+                error,
+            )
+            raise HTTPException(
+                503,
+                "Network interfaces could not be read",
+            ) from error
+
+        return build_network_status(
+            metadata,
+            runtime_interfaces,
+        )
 
     @router.get("/api/v1/network/interfaces", tags=["network"])
     def interfaces() -> list[NetworkInterfaceState]:

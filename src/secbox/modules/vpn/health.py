@@ -126,12 +126,19 @@ def get_tunnel_health(
 
     probe_ok, latency = _probe(tunnel)
 
-    if handshake == 0 or (age is not None and age > 180):
+    if handshake == 0:
         status = VpnHealthStatus.DOWN
-        reason = "WireGuard handshake is missing or stale"
-    elif probe_ok is False or (age is not None and age > 90):
+        reason = "WireGuard handshake is missing"
+    elif age is not None and age > 180:
+        if probe_ok is True:
+            status = VpnHealthStatus.DEGRADED
+            reason = "WireGuard handshake is stale but connectivity probe succeeds"
+        else:
+            status = VpnHealthStatus.DOWN
+            reason = "WireGuard handshake is stale and connectivity is unavailable"
+    elif probe_ok is False:
         status = VpnHealthStatus.DEGRADED
-        reason = "VPN connectivity is degraded"
+        reason = "VPN connectivity probe failed"
     else:
         status = VpnHealthStatus.HEALTHY
         reason = "VPN tunnel is healthy"

@@ -13,6 +13,11 @@ from secbox.core.config_store import ConfigStore
 from secbox.core.models import SecBoxConfig
 from secbox.modules.network.discovery import NetworkDiscoveryError
 from secbox.modules.network.state import NetworkInterfaceState
+from secbox.modules.network.runtime import (
+    NetworkManagedInterface,
+    NetworkRuntimeMetadata,
+    NetworkRuntimeStore,
+)
 from secbox.modules.vpn.runtime import (
     VpnEventStore,
     VpnRuntimeError,
@@ -434,3 +439,82 @@ def test_panel_contains_system_overview(client: TestClient) -> None:
     assert "nftables.service" in javascript
     assert "suricata.service" in javascript
     assert "secbox-ids.service" in javascript
+
+
+def test_network_status_returns_managed_interface_roles(
+    client: TestClient,
+    monkeypatch: MonkeyPatch,
+) -> None:
+    metadata = NetworkRuntimeMetadata(
+        interfaces=[
+            NetworkManagedInterface(
+                name="ens33",
+                role="wan",
+                ipv4_method="dhcp",
+            ),
+            NetworkManagedInterface(
+                name="ens36",
+                role="lan",
+                ipv4_method="static",
+            ),
+            NetworkManagedInterface(
+                name="ens37",
+                role="unused",
+                ipv4_method="disabled",
+            ),
+        ]
+    )
+
+    monkeypatch.setattr(
+        NetworkRuntimeStore,
+        "load",
+        lambda self: metadata,
+    )
+
+    monkeypatch.setattr(
+        "secbox.web.app.discover_interfaces",
+        lambda: [
+            NetworkInterfaceState(
+                name="ens33",
+                mac="00:11:22:33:44:01",
+                mtu=1500,
+                operstate="UP",
+                flags=[],
+                addresses=[],
+                is_loopback=False,
+            ),
+            NetworkInterfaceState(
+                name="ens36",
+                mac="00:11:22:33:44:02",
+                mtu=1500,
+                operstate="UP",
+                flags=[],
+                addresses=[],
+                is_loopback=False,
+            ),
+            NetworkInterfaceState(
+                name="ens37",
+                mac="00:11:22:33:44:03",
+                mtu=1500,
+                operstate="DOWN",
+                flags=[],
+                addresses=[],
+                is_loopback=False,
+            ),
+        ],
+    )
+
+    response = client.get("/api/v1/network/status")
+
+    assert response.status_code == 200
+
+    payload = response.json()
+
+    assert [
+        (item["name"], item["role"])
+        for item in payload["interfaces"]
+    ] == [
+        ("ens33", "wan"),
+        ("ens36", "lan"),
+        ("ens37", "unused"),
+    ]

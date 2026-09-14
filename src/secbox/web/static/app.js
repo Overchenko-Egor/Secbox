@@ -255,7 +255,7 @@ function addAttention(items, severity, title, detail) {
 
 function drawOverview(snapshot) {
   const services = snapshot["services"];
-  const interfaces = snapshot["network/interfaces"];
+  const network = snapshot["network/status"];
   const vpn = snapshot["vpn/status"];
 
   const attention = [];
@@ -426,51 +426,91 @@ function drawOverview(snapshot) {
   /*
    * Network
    */
-  if (interfaces) {
-    const physical = interfaces.filter(
+  /*
+   * Network
+   *
+   * Only interfaces managed by SecBox are evaluated here.
+   * Interfaces with role "unused" are intentionally excluded
+   * from appliance health.
+   */
+  if (network) {
+    const managed = network.interfaces.filter(
       (item) =>
-        !item.is_loopback &&
-        !item.name.startsWith("wg")
+        item.role !== "unused" &&
+        item.configured
     );
 
-    /*
-     * Until the runtime API exposes interface roles, an administratively
-     * unused physical interface must not make the whole appliance degraded.
-     */
-    const relevant = physical.filter(
-      (item) => String(item.operstate).toUpperCase() === "UP"
+    const failed = managed.filter(
+      (item) =>
+        String(item.operstate).toUpperCase() !== "UP"
     );
 
-    const failed = relevant.filter(
-      (item) => String(item.operstate).toUpperCase() !== "UP"
-    );
-
-    if (!relevant.length) {
+    if (!managed.length) {
       networkLevel = "unknown";
-      setComponentStatus("network-health", "unknown", "UNKNOWN");
-      byId("network-summary").textContent = "Нет данных";
-      byId("network-detail").textContent = "Интерфейсы не обнаружены";
+
+      setComponentStatus(
+        "network-health",
+        "unknown",
+        "UNKNOWN",
+      );
+
+      byId("network-summary").textContent =
+        "Нет управляемых интерфейсов";
+
+      byId("network-detail").textContent =
+        "Network runtime не содержит активных ролей";
     } else if (failed.length) {
       networkLevel = "warning";
-      setComponentStatus("network-health", "warning", "DEGRADED");
+
+      setComponentStatus(
+        "network-health",
+        "warning",
+        "DEGRADED",
+      );
+
       byId("network-summary").textContent =
-        `${relevant.length - failed.length}/${relevant.length} UP`;
+        `${managed.length - failed.length}/${managed.length} UP`;
+
       byId("network-detail").textContent =
-        `Неактивны: ${failed.map((item) => item.name).join(", ")}`;
+        failed
+          .map(
+            (item) =>
+              `${item.role.toUpperCase()} ${item.name}`
+          )
+          .join(", ");
 
       addAttention(
         attention,
         "warning",
         "Network",
-        `Интерфейсы не UP: ${failed.map((item) => item.name).join(", ")}`,
+        `Неактивные интерфейсы: ${
+          failed
+            .map(
+              (item) =>
+                `${item.role.toUpperCase()} (${item.name})`
+            )
+            .join(", ")
+        }`,
       );
     } else {
       networkLevel = "healthy";
-      setComponentStatus("network-health", "healthy", "HEALTHY");
+
+      setComponentStatus(
+        "network-health",
+        "healthy",
+        "HEALTHY",
+      );
+
       byId("network-summary").textContent =
-        `${relevant.length}/${relevant.length} UP`;
+        `${managed.length}/${managed.length} UP`;
+
       byId("network-detail").textContent =
-        "Все обнаруженные интерфейсы активны";
+        managed
+          .map(
+            (item) =>
+              `${item.role.toUpperCase()} ${item.name}`
+          )
+          .join(" · ");
     }
   }
 
@@ -561,6 +601,7 @@ async function refresh() {
   byId("refresh").disabled = true;
   const jobs = [
     ["system", "global-message", drawSystem],
+    ["network/status", "global-message", () => {}],
     ["network/interfaces", "network-error", drawInterfaces],
     ["network/routes", "routes-error", (data) => table("routes-body", data.map((x) => [x.destination, x.gateway, x.interface, x.table, x.metric]))],
     ["services", "services-error", drawServices],

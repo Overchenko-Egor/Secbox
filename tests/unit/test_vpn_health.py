@@ -1,4 +1,5 @@
 import subprocess
+
 from ipaddress import ip_address, ip_interface, ip_network
 from pathlib import Path
 
@@ -112,3 +113,104 @@ def test_health_is_down_with_stale_handshake(monkeypatch):
     )
 
     assert result.status == health.VpnHealthStatus.DOWN
+
+def test_old_handshake_with_successful_probe_is_not_degraded(
+    monkeypatch,
+):
+    now = 1000
+
+    monkeypatch.setattr(
+        health,
+        "_read_peer_dump",
+        lambda _: (
+            now - 120,
+            1000,
+            2000,
+        ),
+    )
+
+    monkeypatch.setattr(
+        health,
+        "_probe",
+        lambda _: (
+            True,
+            1.25,
+        ),
+    )
+
+    result = health.get_tunnel_health(
+        tunnel(),
+        now=now,
+    )
+
+    assert result.status == health.VpnHealthStatus.HEALTHY
+    assert result.handshake_age_seconds == 120
+    assert result.probe_ok is True
+
+
+def test_stale_handshake_with_successful_probe_is_degraded(
+    monkeypatch,
+):
+    now = 1000
+
+    monkeypatch.setattr(
+        health,
+        "_read_peer_dump",
+        lambda _: (
+            now - 181,
+            1000,
+            2000,
+        ),
+    )
+
+    monkeypatch.setattr(
+        health,
+        "_probe",
+        lambda _: (
+            True,
+            1.25,
+        ),
+    )
+
+    result = health.get_tunnel_health(
+        tunnel(),
+        now=now,
+    )
+
+    assert result.status == health.VpnHealthStatus.DEGRADED
+    assert result.handshake_age_seconds == 181
+    assert result.probe_ok is True
+
+
+def test_stale_handshake_and_failed_probe_is_down(
+    monkeypatch,
+):
+    now = 1000
+
+    monkeypatch.setattr(
+        health,
+        "_read_peer_dump",
+        lambda _: (
+            now - 181,
+            1000,
+            2000,
+        ),
+    )
+
+    monkeypatch.setattr(
+        health,
+        "_probe",
+        lambda _: (
+            False,
+            None,
+        ),
+    )
+
+    result = health.get_tunnel_health(
+        tunnel(),
+        now=now,
+    )
+
+    assert result.status == health.VpnHealthStatus.DOWN
+    assert result.handshake_age_seconds == 181
+    assert result.probe_ok is False

@@ -50,6 +50,11 @@ from secbox.modules.network.executor import (
     NetworkApplyError,
     apply_networkd_config,
 )
+from secbox.modules.network.runtime import (
+    NetworkRuntimeError,
+    NetworkRuntimeStore,
+    metadata_from_config,
+)
 from secbox.modules.dhcp.renderer import (
     DhcpRenderError,
     render_dnsmasq_config,
@@ -607,11 +612,16 @@ def network_apply() -> None:
             backup_dir=Path("/var/lib/secbox/network-backup"),
         )
 
+        NetworkRuntimeStore().save(
+            metadata_from_config(config.network)
+        )
+
     except (
         ConfigStoreError,
         NetworkDiscoveryError,
         NetworkPreflightError,
         NetworkApplyError,
+        NetworkRuntimeError,
         OSError,
     ) as error:
         _fail(str(error))
