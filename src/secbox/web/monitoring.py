@@ -15,6 +15,7 @@ SERVICE_UNITS = (
     "nftables.service",
     "suricata.service",
     "secbox-ids.service",
+    "secbox-vpn.service",
 )
 
 

@@ -10,6 +10,12 @@ from secbox.modules.vpn.controller import (
     evaluate_once,
 )
 from secbox.modules.vpn.models import VpnConfig
+from secbox.modules.vpn.runtime import (
+    VpnEventStore,
+    VpnRuntimeStore,
+    runtime_from_result,
+    switch_event_from_result,
+)
 
 
 LOGGER = logging.getLogger(__name__)
@@ -34,6 +40,8 @@ class VpnDaemon:
         *,
         state_path: Path,
         interval: float = 3.0,
+        runtime_store: VpnRuntimeStore | None = None,
+        event_store: VpnEventStore | None = None,
     ) -> None:
         if interval <= 0:
             raise ValueError(
@@ -43,6 +51,16 @@ class VpnDaemon:
         self.vpn = vpn
         self.state_path = state_path
         self.interval = interval
+        self.runtime_store = (
+            runtime_store
+            if runtime_store is not None
+            else VpnRuntimeStore()
+        )
+        self.event_store = (
+            event_store
+            if event_store is not None
+            else VpnEventStore()
+        )
 
         self._iterations = 0
         self._switches = 0
@@ -62,8 +80,15 @@ class VpnDaemon:
 
         self._iterations += 1
 
+        self.runtime_store.save(
+            runtime_from_result(result)
+        )
+
         if result.switched:
             self._switches += 1
+            self.event_store.append(
+                switch_event_from_result(result)
+            )
 
         return result
 

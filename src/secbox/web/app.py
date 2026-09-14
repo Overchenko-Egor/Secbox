@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import Annotated, Any
 
 import yaml
-from fastapi import APIRouter, Depends, FastAPI, HTTPException, Request
+from fastapi import APIRouter, Depends, FastAPI, HTTPException, Query, Request
 from fastapi.responses import FileResponse, JSONResponse, Response
 from fastapi.security import HTTPBasic, HTTPBasicCredentials
 from starlette.middleware.base import RequestResponseEndpoint
@@ -25,6 +25,13 @@ from secbox.modules.network.renderer import NetworkRenderError
 from secbox.modules.network.routes import NetworkRoute, RouteDiscoveryError, discover_ipv4_routes
 from secbox.modules.network.state import NetworkInterfaceState
 from secbox.modules.network.validator import NetworkPreflightError
+from secbox.modules.vpn.runtime import (
+    VpnEventStore,
+    VpnRuntimeError,
+    VpnRuntimeState,
+    VpnRuntimeStore,
+    VpnSwitchEvent,
+)
 from secbox.web.monitoring import ServiceStatus, SystemStatus, service_statuses, system_status
 from secbox.web.preview import ConfigPreview, preview_config
 from secbox.web.settings import WebSettings
@@ -70,6 +77,8 @@ class BodyLimitMiddleware:
 def create_app(settings: WebSettings | None = None) -> FastAPI:
     settings = settings or WebSettings.from_environment()
     store = ConfigStore(settings.config_path)
+    vpn_runtime_store = VpnRuntimeStore()
+    vpn_event_store = VpnEventStore()
     security = HTTPBasic(realm="SecBox")
     app = FastAPI(
         title="SecBox Management API", version=__version__,
@@ -136,6 +145,51 @@ def create_app(settings: WebSettings | None = None) -> FastAPI:
     def services() -> list[ServiceStatus]:
         """Report systemd states, not whether a ruleset protects traffic."""
         return service_statuses()
+
+    @router.get("/api/v1/vpn/status", tags=["vpn"])
+    def vpn_status() -> VpnRuntimeState:
+        """Return the latest VPN pool runtime snapshot."""
+        try:
+            state = vpn_runtime_store.load()
+        except VpnRuntimeError as error:
+            logger.warning(
+                "VPN runtime state read failed: %s",
+                error,
+            )
+            raise HTTPException(
+                503,
+                "VPN runtime state is not readable",
+            ) from error
+
+        if state is None:
+            raise HTTPException(
+                404,
+                "VPN runtime state is not available yet",
+            )
+
+        return state
+
+    @router.get("/api/v1/vpn/events", tags=["vpn"])
+    def vpn_events(
+        limit: Annotated[
+            int,
+            Query(ge=1, le=500),
+        ] = 50,
+    ) -> list[VpnSwitchEvent]:
+        """Return recent VPN switch events, newest first."""
+        try:
+            return vpn_event_store.load_recent(
+                limit=limit
+            )
+        except VpnRuntimeError as error:
+            logger.warning(
+                "VPN event history read failed: %s",
+                error,
+            )
+            raise HTTPException(
+                503,
+                "VPN event history is not readable",
+            ) from error
 
     @router.get("/api/v1/network/interfaces", tags=["network"])
     def interfaces() -> list[NetworkInterfaceState]:

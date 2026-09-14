@@ -41,3 +41,7 @@ def test_systemd_timeout_yields_unknown(monkeypatch: MonkeyPatch) -> None:
 
     monkeypatch.setattr(subprocess, "run", fail)
     assert all(item.active_state == "unknown" and item.error for item in service_statuses())
+
+
+def test_vpn_service_is_monitored() -> None:
+    assert "secbox-vpn.service" in SERVICE_UNITS

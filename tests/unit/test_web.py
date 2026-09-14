@@ -1,6 +1,7 @@
 """HTTP boundary tests: authentication, preview isolation and failure states."""
 
 from collections.abc import Iterator
+from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
@@ -12,6 +13,13 @@ from secbox.core.config_store import ConfigStore
 from secbox.core.models import SecBoxConfig
 from secbox.modules.network.discovery import NetworkDiscoveryError
 from secbox.modules.network.state import NetworkInterfaceState
+from secbox.modules.vpn.runtime import (
+    VpnEventStore,
+    VpnRuntimeError,
+    VpnRuntimeState,
+    VpnRuntimeStore,
+    VpnSwitchEvent,
+)
 from secbox.web.app import MAX_BODY_BYTES, create_app
 from secbox.web.settings import WebSettings
 
@@ -41,7 +49,8 @@ def client(config_path: Path, monkeypatch: MonkeyPatch) -> Iterator[TestClient]:
 @pytest.mark.parametrize("path", [
     "/", "/assets/app.js", "/assets/style.css", "/api/v1/config", "/api/v1/config/export",
     "/api/v1/network/interfaces", "/api/v1/network/routes", "/api/v1/services",
-    "/api/v1/system", "/api/v1/openapi.json",
+    "/api/v1/system", "/api/v1/vpn/status", "/api/v1/vpn/events",
+    "/api/v1/openapi.json",
 ])
 def test_endpoints_require_auth(client: TestClient, path: str) -> None:
     response = client.get(path, auth=None)
@@ -198,3 +207,192 @@ def test_settings_reject_missing_or_ambiguous_password(monkeypatch: MonkeyPatch,
         WebSettings.from_environment()
     with pytest.raises(ValueError, match="at least 16"):
         WebSettings(tmp_path / "config", "11111")
+
+
+def test_vpn_status_returns_runtime_snapshot(
+    client: TestClient,
+    monkeypatch: MonkeyPatch,
+) -> None:
+    observed_at = datetime(
+        2026,
+        9,
+        14,
+        12,
+        0,
+        tzinfo=UTC,
+    )
+
+    state = VpnRuntimeState(
+        observed_at=observed_at,
+        active_interface="wg0",
+        reason="Active VPN tunnel remains unchanged",
+        tunnels=[],
+    )
+
+    monkeypatch.setattr(
+        VpnRuntimeStore,
+        "load",
+        lambda self: state,
+    )
+
+    response = client.get(
+        "/api/v1/vpn/status"
+    )
+
+    assert response.status_code == 200
+
+    data = response.json()
+
+    assert data["active_interface"] == "wg0"
+    assert data["reason"] == (
+        "Active VPN tunnel remains unchanged"
+    )
+    assert data["tunnels"] == []
+    assert data["observed_at"].startswith(
+        "2026-09-14T12:00:00"
+    )
+
+
+def test_vpn_status_missing_returns_404(
+    client: TestClient,
+    monkeypatch: MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        VpnRuntimeStore,
+        "load",
+        lambda self: None,
+    )
+
+    response = client.get(
+        "/api/v1/vpn/status"
+    )
+
+    assert response.status_code == 404
+    assert "not available yet" in response.text
+
+
+def test_vpn_status_read_failure_returns_503(
+    client: TestClient,
+    monkeypatch: MonkeyPatch,
+) -> None:
+    def fail(self):
+        raise VpnRuntimeError(
+            "private filesystem detail"
+        )
+
+    monkeypatch.setattr(
+        VpnRuntimeStore,
+        "load",
+        fail,
+    )
+
+    response = client.get(
+        "/api/v1/vpn/status"
+    )
+
+    assert response.status_code == 503
+    assert "private filesystem detail" not in response.text
+
+
+def test_vpn_events_returns_newest_events(
+    client: TestClient,
+    monkeypatch: MonkeyPatch,
+) -> None:
+    event = VpnSwitchEvent(
+        occurred_at=datetime(
+            2026,
+            9,
+            14,
+            12,
+            5,
+            tzinfo=UTC,
+        ),
+        from_interface="wg0",
+        to_interface="wg1",
+        reason="primary failed",
+    )
+
+    observed_limits = []
+
+    def fake_load_recent(self, limit=50):
+        observed_limits.append(limit)
+        return [event]
+
+    monkeypatch.setattr(
+        VpnEventStore,
+        "load_recent",
+        fake_load_recent,
+    )
+
+    response = client.get(
+        "/api/v1/vpn/events?limit=25"
+    )
+
+    assert response.status_code == 200
+    assert observed_limits == [25]
+
+    data = response.json()
+
+    assert len(data) == 1
+    assert data[0]["from_interface"] == "wg0"
+    assert data[0]["to_interface"] == "wg1"
+    assert data[0]["reason"] == "primary failed"
+
+
+def test_vpn_events_empty_history(
+    client: TestClient,
+    monkeypatch: MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        VpnEventStore,
+        "load_recent",
+        lambda self, limit=50: [],
+    )
+
+    response = client.get(
+        "/api/v1/vpn/events"
+    )
+
+    assert response.status_code == 200
+    assert response.json() == []
+
+
+@pytest.mark.parametrize(
+    "limit",
+    [0, 501],
+)
+def test_vpn_events_rejects_invalid_limit(
+    client: TestClient,
+    limit: int,
+) -> None:
+    response = client.get(
+        f"/api/v1/vpn/events?limit={limit}"
+    )
+
+    assert response.status_code == 422
+
+
+def test_vpn_events_read_failure_returns_503(
+    client: TestClient,
+    monkeypatch: MonkeyPatch,
+) -> None:
+    def fail(self, limit=50):
+        raise VpnRuntimeError(
+            "private event filesystem detail"
+        )
+
+    monkeypatch.setattr(
+        VpnEventStore,
+        "load_recent",
+        fail,
+    )
+
+    response = client.get(
+        "/api/v1/vpn/events"
+    )
+
+    assert response.status_code == 503
+    assert (
+        "private event filesystem detail"
+        not in response.text
+    )
