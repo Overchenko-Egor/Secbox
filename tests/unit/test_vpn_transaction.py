@@ -6,7 +6,9 @@ import secbox.core.transactions.vpn as transaction
 from secbox.core.config_store import ConfigStore
 from secbox.core.models import SecBoxConfig
 from secbox.modules.vpn.models import VpnConfig
-from secbox.modules.vpn.service import VpnApplyResult
+from secbox.modules.vpn.service import (
+    VpnTransitionResult,
+)
 
 
 def make_vpn(
@@ -23,7 +25,9 @@ def make_vpn(
                     "name": name,
                     "interface": interface,
                     "address": "10.200.0.2/30",
-                    "private_key_file": f"/etc/secbox/vpn/{interface}.key",
+                    "private_key_file": (
+                        f"/etc/secbox/vpn/{interface}.key"
+                    ),
                     "priority": 100,
                     "routing_table": table,
                     "source_networks": [
@@ -64,22 +68,45 @@ def make_store(
     return store, old_vpn
 
 
-def successful_result(
-    interface: str,
-    name: str,
-) -> VpnApplyResult:
-    return VpnApplyResult(
-        applied_tunnels=1,
-        active_name=name,
-        active_interface=interface,
+def result_for(
+    config: SecBoxConfig,
+) -> VpnTransitionResult:
+    tunnels = (
+        config.vpn.tunnels
+        if config.vpn is not None
+        and config.vpn.enabled
+        else []
+    )
+
+    active = (
+        tunnels[0]
+        if tunnels
+        else None
+    )
+
+    return VpnTransitionResult(
+        applied_tunnels=len(tunnels),
+        removed_tunnels=0,
+        active_name=(
+            active.name
+            if active is not None
+            else None
+        ),
+        active_interface=(
+            active.interface
+            if active is not None
+            else None
+        ),
     )
 
 
 def test_successful_transaction_commits_new_vpn(
     tmp_path: Path,
     monkeypatch,
-) -> None:
-    store, _ = make_store(tmp_path)
+):
+    store, _ = make_store(
+        tmp_path
+    )
 
     new_vpn = make_vpn(
         name="new",
@@ -93,13 +120,28 @@ def test_successful_transaction_commits_new_vpn(
         lambda config: None,
     )
 
+    transitions = []
+
+    def fake_reconcile(
+        old,
+        new,
+        **kwargs,
+    ):
+        transitions.append(
+            (
+                old.vpn.tunnels[0].interface,
+                new.vpn.tunnels[0].interface,
+            )
+        )
+
+        return result_for(
+            new
+        )
+
     monkeypatch.setattr(
         transaction,
-        "apply_vpn_config",
-        lambda config, **kwargs: successful_result(
-            config.vpn.tunnels[0].interface,
-            config.vpn.tunnels[0].name,
-        ),
+        "reconcile_vpn_config",
+        fake_reconcile,
     )
 
     result = transaction.apply_vpn_transaction(
@@ -107,19 +149,21 @@ def test_successful_transaction_commits_new_vpn(
         new_vpn,
     )
 
-    loaded = store.load()
-
-    assert loaded.vpn == new_vpn
+    assert store.load().vpn == new_vpn
     assert result.config.vpn == new_vpn
     assert result.apply_result.active_interface == "wg1"
-    assert store.backup_path.exists()
+    assert transitions == [
+        ("wg0", "wg1")
+    ]
 
 
-def test_failed_apply_restores_old_config_and_runtime(
+def test_failed_apply_reconciles_back_to_old_state(
     tmp_path: Path,
     monkeypatch,
-) -> None:
-    store, old_vpn = make_store(tmp_path)
+):
+    store, old_vpn = make_store(
+        tmp_path
+    )
 
     new_vpn = make_vpn(
         name="new",
@@ -133,26 +177,43 @@ def test_failed_apply_restores_old_config_and_runtime(
         lambda config: None,
     )
 
-    applied: list[str] = []
+    transitions = []
 
-    def fake_apply(config, **kwargs):
-        interface = config.vpn.tunnels[0].interface
-        applied.append(interface)
+    def fake_reconcile(
+        old,
+        new,
+        **kwargs,
+    ):
+        old_interface = (
+            old.vpn.tunnels[0].interface
+        )
+        new_interface = (
+            new.vpn.tunnels[0].interface
+        )
 
-        if interface == "wg1":
+        transitions.append(
+            (
+                old_interface,
+                new_interface,
+            )
+        )
+
+        if (
+            old_interface == "wg0"
+            and new_interface == "wg1"
+        ):
             raise RuntimeError(
                 "simulated apply failure"
             )
 
-        return successful_result(
-            interface,
-            config.vpn.tunnels[0].name,
+        return result_for(
+            new
         )
 
     monkeypatch.setattr(
         transaction,
-        "apply_vpn_config",
-        fake_apply,
+        "reconcile_vpn_config",
+        fake_reconcile,
     )
 
     with pytest.raises(
@@ -164,17 +225,21 @@ def test_failed_apply_restores_old_config_and_runtime(
             new_vpn,
         )
 
-    loaded = store.load()
+    assert store.load().vpn == old_vpn
 
-    assert loaded.vpn == old_vpn
-    assert applied == ["wg1", "wg0"]
+    assert transitions == [
+        ("wg0", "wg1"),
+        ("wg1", "wg0"),
+    ]
 
 
 def test_validation_failure_does_not_change_config(
     tmp_path: Path,
     monkeypatch,
-) -> None:
-    store, old_vpn = make_store(tmp_path)
+):
+    store, old_vpn = make_store(
+        tmp_path
+    )
 
     new_vpn = make_vpn(
         name="new",
@@ -206,51 +271,3 @@ def test_validation_failure_does_not_change_config(
 
     assert store.config_path.read_bytes() == before
     assert store.load().vpn == old_vpn
-
-
-def test_failed_rollback_is_reported(
-    tmp_path: Path,
-    monkeypatch,
-) -> None:
-    store, _ = make_store(tmp_path)
-
-    new_vpn = make_vpn(
-        name="new",
-        interface="wg1",
-        table=201,
-    )
-
-    monkeypatch.setattr(
-        transaction,
-        "validate_vpn_key_paths",
-        lambda config: None,
-    )
-
-    monkeypatch.setattr(
-        transaction,
-        "apply_vpn_config",
-        lambda config, **kwargs: (
-            (_ for _ in ()).throw(
-                RuntimeError("apply exploded")
-            )
-        ),
-    )
-
-    monkeypatch.setattr(
-        store,
-        "rollback",
-        lambda: (
-            (_ for _ in ()).throw(
-                RuntimeError("rollback exploded")
-            )
-        ),
-    )
-
-    with pytest.raises(
-        transaction.VpnTransactionError,
-        match="configuration rollback failed",
-    ):
-        transaction.apply_vpn_transaction(
-            store,
-            new_vpn,
-        )

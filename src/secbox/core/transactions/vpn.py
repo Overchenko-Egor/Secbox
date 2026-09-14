@@ -9,8 +9,8 @@ from secbox.core.config_store import (
 from secbox.core.models import SecBoxConfig
 from secbox.modules.vpn.models import VpnConfig
 from secbox.modules.vpn.service import (
-    VpnApplyResult,
-    apply_vpn_config,
+    VpnTransitionResult,
+    reconcile_vpn_config,
 )
 from secbox.modules.vpn.validator import (
     validate_vpn_config,
@@ -27,27 +27,30 @@ class VpnTransactionResult:
     """Result of a committed VPN configuration transaction."""
 
     config: SecBoxConfig
-    apply_result: VpnApplyResult
+    apply_result: VpnTransitionResult
 
 
 def build_vpn_candidate(
     current_config: SecBoxConfig,
     vpn: VpnConfig,
 ) -> SecBoxConfig:
-    """Build and fully validate a SecBox config with a new VPN section."""
+    """Build and fully validate SecBox config with a new VPN section."""
 
-    candidate = SecBoxConfig.model_validate(
-        {
-            **current_config.model_dump(
-                mode="python"
-            ),
-            "vpn": vpn.model_dump(
-                mode="python"
-            ),
-        }
+    raw = current_config.model_dump(
+        mode="python"
     )
 
-    validate_vpn_config(candidate)
+    raw["vpn"] = vpn.model_dump(
+        mode="python"
+    )
+
+    candidate = SecBoxConfig.model_validate(
+        raw
+    )
+
+    validate_vpn_config(
+        candidate
+    )
 
     return candidate
 
@@ -56,20 +59,23 @@ def apply_vpn_transaction(
     store: ConfigStore,
     vpn: VpnConfig,
 ) -> VpnTransactionResult:
-    """Persist and apply VPN config, restoring the previous config on failure.
-
-    The previous persistent configuration is restored if applying the new VPN
-    pool fails. An attempt is then made to re-apply the previous VPN runtime.
-    """
+    """Persist and reconcile VPN desired state transactionally."""
 
     try:
         current_config = store.load()
+
         candidate = build_vpn_candidate(
             current_config,
             vpn,
         )
 
-        validate_vpn_key_paths(candidate)
+        if (
+            candidate.vpn is not None
+            and candidate.vpn.enabled
+        ):
+            validate_vpn_key_paths(
+                candidate
+            )
 
     except Exception as error:
         raise VpnTransactionError(
@@ -77,14 +83,18 @@ def apply_vpn_transaction(
         ) from error
 
     try:
-        store.save(candidate)
+        store.save(
+            candidate
+        )
+
     except ConfigStoreError as error:
         raise VpnTransactionError(
             f"VPN configuration could not be saved: {error}"
         ) from error
 
     try:
-        result = apply_vpn_config(
+        result = reconcile_vpn_config(
+            current_config,
             candidate,
             validate_keys=False,
         )
@@ -93,28 +103,33 @@ def apply_vpn_transaction(
         rollback_errors: list[str] = []
 
         try:
-            restored = store.rollback()
+            restored_config = store.rollback()
+
         except Exception as error:
             rollback_errors.append(
                 f"configuration rollback failed: {error}"
             )
-            restored = current_config
 
-        if (
-            restored.vpn is not None
-            and restored.vpn.enabled
-        ):
-            try:
-                apply_vpn_config(restored)
-            except Exception as error:
-                rollback_errors.append(
-                    f"previous VPN runtime could not be restored: {error}"
-                )
+            restored_config = current_config
+
+        try:
+            reconcile_vpn_config(
+                candidate,
+                restored_config,
+            )
+
+        except Exception as error:
+            rollback_errors.append(
+                "previous VPN runtime could not be restored: "
+                f"{error}"
+            )
 
         detail = (
-            "; ".join(rollback_errors)
+            "; ".join(
+                rollback_errors
+            )
             if rollback_errors
-            else "previous configuration restored"
+            else "previous configuration and VPN runtime restored"
         )
 
         raise VpnTransactionError(

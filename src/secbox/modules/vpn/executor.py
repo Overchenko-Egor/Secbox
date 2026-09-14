@@ -6,6 +6,7 @@ from secbox.modules.vpn.models import WireGuardTunnelConfig
 from secbox.modules.vpn.routing import (
     VpnRoutingError,
     configure_tunnel_route,
+    remove_tunnel_route,
 )
 
 
@@ -26,15 +27,21 @@ def _run(
             check=True,
             capture_output=True,
         )
+
     except subprocess.CalledProcessError as error:
-        message = error.stderr.strip() or error.stdout.strip()
+        message = (
+            error.stderr.strip()
+            or error.stdout.strip()
+        )
 
         raise VpnApplyError(
             f"command failed: {' '.join(command)}: {message}"
         ) from error
 
 
-def _interface_exists(interface: str) -> bool:
+def _interface_exists(
+    interface: str,
+) -> bool:
     result = subprocess.run(
         [
             "/usr/sbin/ip",
@@ -51,12 +58,11 @@ def _interface_exists(interface: str) -> bool:
     return result.returncode == 0
 
 
-
 def _reconcile_wireguard_peers(
     interface: str,
     desired_public_key: str,
 ) -> None:
-    """Remove peers that are not present in desired configuration."""
+    """Remove peers not present in desired configuration."""
 
     result = _run(
         [
@@ -73,7 +79,10 @@ def _reconcile_wireguard_peers(
         if peer.strip()
     }
 
-    stale_peers = current_peers - {desired_public_key}
+    stale_peers = (
+        current_peers
+        - {desired_public_key}
+    )
 
     for public_key in sorted(stale_peers):
         _run(
@@ -87,12 +96,15 @@ def _reconcile_wireguard_peers(
             ]
         )
 
+
 def apply_wireguard_tunnel(
     tunnel: WireGuardTunnelConfig,
 ) -> None:
-    """Create and configure one WireGuard tunnel."""
+    """Create or update one WireGuard tunnel."""
 
-    if not _interface_exists(tunnel.interface):
+    if not _interface_exists(
+        tunnel.interface
+    ):
         _run(
             [
                 "/usr/sbin/ip",
@@ -142,23 +154,34 @@ def apply_wireguard_tunnel(
         "allowed-ips",
         ",".join(
             str(network)
-            for network in tunnel.peer.allowed_ips
+            for network
+            in tunnel.peer.allowed_ips
         ),
     ]
 
-    if tunnel.peer.preshared_key_file is not None:
+    if (
+        tunnel.peer.preshared_key_file
+        is not None
+    ):
         command.extend(
             [
                 "preshared-key",
-                str(tunnel.peer.preshared_key_file),
+                str(
+                    tunnel.peer.preshared_key_file
+                ),
             ]
         )
 
-    if tunnel.peer.persistent_keepalive is not None:
+    if (
+        tunnel.peer.persistent_keepalive
+        is not None
+    ):
         command.extend(
             [
                 "persistent-keepalive",
-                str(tunnel.peer.persistent_keepalive),
+                str(
+                    tunnel.peer.persistent_keepalive
+                ),
             ]
         )
 
@@ -181,6 +204,41 @@ def apply_wireguard_tunnel(
     )
 
     try:
-        configure_tunnel_route(tunnel)
+        configure_tunnel_route(
+            tunnel
+        )
     except VpnRoutingError as error:
-        raise VpnApplyError(str(error)) from error
+        raise VpnApplyError(
+            str(error)
+        ) from error
+
+
+def remove_wireguard_tunnel(
+    tunnel: WireGuardTunnelConfig,
+    *,
+    remove_route: bool = True,
+) -> None:
+    """Remove a WireGuard interface and its obsolete routing table."""
+
+    if _interface_exists(
+        tunnel.interface
+    ):
+        _run(
+            [
+                "/usr/sbin/ip",
+                "link",
+                "delete",
+                "dev",
+                tunnel.interface,
+            ]
+        )
+
+    if remove_route:
+        try:
+            remove_tunnel_route(
+                tunnel
+            )
+        except VpnRoutingError as error:
+            raise VpnApplyError(
+                str(error)
+            ) from error

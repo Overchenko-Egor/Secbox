@@ -177,3 +177,108 @@ def test_pool_policy_deduplicates_source_networks(monkeypatch):
     ]
 
     assert len(active_rules) == 1
+
+
+def test_reconcile_pool_policy_removes_stale_sources(
+    monkeypatch,
+):
+    calls = []
+
+    def fake_run_ip(*arguments, check=True):
+        calls.append((arguments, check))
+        return None
+
+    monkeypatch.setattr(
+        routing,
+        "_run_ip",
+        fake_run_ip,
+    )
+
+    old = make_tunnel(
+        sources=[
+            ip_network("192.168.50.0/24"),
+        ],
+    )
+
+    new = make_tunnel(
+        sources=[
+            ip_network("192.168.60.0/24"),
+        ],
+    )
+
+    routing.reconcile_pool_policy(
+        [old],
+        [new],
+    )
+
+    assert (
+        (
+            "rule",
+            "del",
+            "from",
+            "192.168.50.0/24",
+            "priority",
+            "100",
+        ),
+        False,
+    ) in calls
+
+    assert (
+        (
+            "rule",
+            "add",
+            "from",
+            "192.168.60.0/24",
+            "priority",
+            "100",
+            "table",
+            "250",
+        ),
+        True,
+    ) in calls
+
+    stale_readd = (
+        (
+            "rule",
+            "add",
+            "from",
+            "192.168.50.0/24",
+            "priority",
+            "100",
+            "table",
+            "250",
+        ),
+        True,
+    )
+
+    assert stale_readd not in calls
+
+
+def test_flush_active_table(
+    monkeypatch,
+):
+    calls = []
+
+    def fake_run_ip(*arguments, check=True):
+        calls.append((arguments, check))
+        return None
+
+    monkeypatch.setattr(
+        routing,
+        "_run_ip",
+        fake_run_ip,
+    )
+
+    routing.flush_active_table()
+
+    assert calls == [
+        (
+            (
+                "route",
+                "flush",
+                "table",
+                "250",
+            ),
+            False,
+        )
+    ]
