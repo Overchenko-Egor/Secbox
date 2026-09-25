@@ -430,3 +430,344 @@ def test_reconcile_can_disable_vpn(
     assert result.active_interface is None
     assert result.applied_tunnels == 0
     assert result.removed_tunnels == 2
+
+
+
+def l2_tunnel(
+    name="site-l2",
+    transport_interface="wg2",
+    bridge_interface="br-l2vpn",
+    gretap_interface="gt-l2vpn",
+):
+    return {
+        "name": name,
+        "enabled": True,
+        "transport": {
+            "interface": transport_interface,
+            "address": "10.202.0.2/30",
+            "private_key_file": (
+                f"/etc/secbox/vpn/{transport_interface}.key"
+            ),
+            "mtu": 1420,
+            "peer": {
+                "public_key": "l2-peer",
+                "endpoint": "192.0.2.1:51822",
+                "allowed_ips": [
+                    "10.202.0.1/32",
+                ],
+                "persistent_keepalive": 25,
+            },
+        },
+        "bridge": {
+            "interface": bridge_interface,
+            "address": "172.30.0.2/24",
+            "ports": [],
+        },
+        "encapsulation": {
+            "interface": gretap_interface,
+            "local": "10.202.0.2",
+            "remote": "10.202.0.1",
+            "mtu": 1376,
+            "ttl": 64,
+        },
+    }
+
+
+def config_with_l2(
+    l2_tunnels,
+    *,
+    tunnels=None,
+    enabled=True,
+):
+    return SecBoxConfig.model_validate(
+        {
+            "vpn": {
+                "enabled": enabled,
+                "tunnels": (
+                    tunnels
+                    if tunnels is not None
+                    else []
+                ),
+                "l2_tunnels": l2_tunnels,
+            }
+        }
+    )
+
+
+def patch_l2_runtime(
+    monkeypatch,
+    calls,
+):
+    monkeypatch.setattr(
+        service,
+        "apply_l2_vpn_tunnel",
+        lambda tunnel: calls.append(
+            (
+                "apply_l2",
+                tunnel.name,
+                tunnel.transport.interface,
+            )
+        ),
+    )
+
+    monkeypatch.setattr(
+        service,
+        "remove_l2_vpn_tunnel",
+        lambda tunnel: calls.append(
+            (
+                "remove_l2",
+                tunnel.name,
+                tunnel.transport.interface,
+            )
+        ),
+    )
+
+
+def test_reconcile_applies_l2_tunnel(
+    monkeypatch,
+):
+    previous = SecBoxConfig(
+        vpn=VpnConfig(
+            enabled=False,
+            tunnels=[],
+        )
+    )
+
+    desired = config_with_l2(
+        [
+            l2_tunnel()
+        ]
+    )
+
+    calls = patch_runtime(
+        monkeypatch
+    )
+
+    patch_l2_runtime(
+        monkeypatch,
+        calls,
+    )
+
+    result = reconcile_vpn_config(
+        previous,
+        desired,
+        validate_keys=False,
+    )
+
+    assert (
+        "apply_l2",
+        "site-l2",
+        "wg2",
+    ) in calls
+
+    assert result.applied_tunnels == 0
+    assert result.applied_l2_tunnels == 1
+    assert result.removed_l2_tunnels == 0
+    assert result.active_interface is None
+
+
+def test_reconcile_removes_stale_l2_tunnel(
+    monkeypatch,
+):
+    previous = config_with_l2(
+        [
+            l2_tunnel()
+        ]
+    )
+
+    desired = SecBoxConfig(
+        vpn=VpnConfig(
+            enabled=False,
+            tunnels=[],
+        )
+    )
+
+    calls = patch_runtime(
+        monkeypatch
+    )
+
+    patch_l2_runtime(
+        monkeypatch,
+        calls,
+    )
+
+    result = reconcile_vpn_config(
+        previous,
+        desired,
+        validate_keys=False,
+    )
+
+    assert (
+        "remove_l2",
+        "site-l2",
+        "wg2",
+    ) in calls
+
+    assert result.applied_l2_tunnels == 0
+    assert result.removed_l2_tunnels == 1
+
+
+def test_reconcile_updates_existing_l2_tunnel(
+    monkeypatch,
+):
+    previous = config_with_l2(
+        [
+            l2_tunnel()
+        ]
+    )
+
+    desired = config_with_l2(
+        [
+            l2_tunnel()
+        ]
+    )
+
+    calls = patch_runtime(
+        monkeypatch
+    )
+
+    patch_l2_runtime(
+        monkeypatch,
+        calls,
+    )
+
+    result = reconcile_vpn_config(
+        previous,
+        desired,
+        validate_keys=False,
+    )
+
+    assert (
+        "apply_l2",
+        "site-l2",
+        "wg2",
+    ) in calls
+
+    assert not any(
+        call[0] == "remove_l2"
+        for call in calls
+    )
+
+    assert result.applied_l2_tunnels == 1
+    assert result.removed_l2_tunnels == 0
+
+
+def test_reconcile_l3_and_l2_together(
+    monkeypatch,
+):
+    previous = standard_config()
+
+    desired = config_with_l2(
+        [
+            l2_tunnel()
+        ],
+        tunnels=[
+            tunnel(
+                "primary",
+                "wg0",
+                200,
+                100,
+            ),
+            tunnel(
+                "backup",
+                "wg1",
+                201,
+                200,
+                source=None,
+            ),
+        ],
+    )
+
+    calls = patch_runtime(
+        monkeypatch
+    )
+
+    patch_l2_runtime(
+        monkeypatch,
+        calls,
+    )
+
+    result = reconcile_vpn_config(
+        previous,
+        desired,
+        validate_keys=False,
+    )
+
+    assert (
+        "apply",
+        "wg0",
+    ) in calls
+
+    assert (
+        "apply",
+        "wg1",
+    ) in calls
+
+    assert (
+        "apply_l2",
+        "site-l2",
+        "wg2",
+    ) in calls
+
+    assert result.applied_tunnels == 2
+    assert result.applied_l2_tunnels == 1
+    assert result.active_interface == "wg0"
+
+
+def test_apply_vpn_config_applies_l2_overlay(
+    monkeypatch,
+):
+    desired = config_with_l2(
+        [
+            l2_tunnel()
+        ],
+        tunnels=[
+            tunnel(
+                "primary",
+                "wg0",
+                200,
+                100,
+            ),
+            tunnel(
+                "backup",
+                "wg1",
+                201,
+                200,
+                source=None,
+            ),
+        ],
+    )
+
+    calls = patch_runtime(
+        monkeypatch
+    )
+
+    patch_l2_runtime(
+        monkeypatch,
+        calls,
+    )
+
+    result = apply_vpn_config(
+        desired,
+        validate_keys=False,
+    )
+
+    assert (
+        "apply",
+        "wg0",
+    ) in calls
+
+    assert (
+        "apply",
+        "wg1",
+    ) in calls
+
+    assert (
+        "apply_l2",
+        "site-l2",
+        "wg2",
+    ) in calls
+
+    assert result.applied_tunnels == 2
+    assert result.applied_l2_tunnels == 1
+    assert result.active_interface == "wg0"

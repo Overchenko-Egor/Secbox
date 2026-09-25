@@ -82,6 +82,46 @@ def validate_vpn_against_interfaces(
             )
 
 
+    for tunnel in vpn.l2_tunnels:
+        if not tunnel.enabled:
+            continue
+
+        managed_interfaces = {
+            tunnel.transport.interface,
+            tunnel.bridge.interface,
+            tunnel.encapsulation.interface,
+        }
+
+        conflicts = managed_interfaces & interfaces
+
+        if conflicts:
+            raise VpnValidationError(
+                "L2 VPN interfaces conflict with configured "
+                f"physical interfaces: {sorted(conflicts)}"
+            )
+
+        for port in tunnel.bridge.ports:
+            if port not in interfaces:
+                raise VpnValidationError(
+                    f"L2 bridge port {port!r} is not a "
+                    "configured physical interface"
+                )
+
+        _validate_managed_key_path(
+            tunnel.transport.private_key_file,
+            f"private key for L2 tunnel {tunnel.name!r}",
+        )
+
+        if (
+            tunnel.transport.peer.preshared_key_file
+            is not None
+        ):
+            _validate_managed_key_path(
+                tunnel.transport.peer.preshared_key_file,
+                f"preshared key for L2 tunnel {tunnel.name!r}",
+            )
+
+
 def validate_vpn_config(
     config: SecBoxConfig,
 ) -> None:
@@ -121,6 +161,25 @@ def validate_vpn_key_paths(
             _require_secure_key_file(
                 tunnel.peer.preshared_key_file,
                 f"preshared key for tunnel {tunnel.name!r}",
+            )
+
+
+    for tunnel in vpn.l2_tunnels:
+        if not tunnel.enabled:
+            continue
+
+        _require_secure_key_file(
+            tunnel.transport.private_key_file,
+            f"private key for L2 tunnel {tunnel.name!r}",
+        )
+
+        if (
+            tunnel.transport.peer.preshared_key_file
+            is not None
+        ):
+            _require_secure_key_file(
+                tunnel.transport.peer.preshared_key_file,
+                f"preshared key for L2 tunnel {tunnel.name!r}",
             )
 
 

@@ -88,6 +88,10 @@ class VpnConfig(BaseModel):
         default_factory=list,
     )
 
+    l2_tunnels: list["L2VpnTunnelConfig"] = Field(
+        default_factory=list,
+    )
+
     @model_validator(mode="after")
     def validate_unique_tunnels(self):
         names = [tunnel.name for tunnel in self.tunnels]
@@ -103,9 +107,193 @@ class VpnConfig(BaseModel):
         if len(tables) != len(set(tables)):
             raise ValueError("VPN routing tables must be unique")
 
-        if self.enabled and not self.tunnels:
+        l2_names = [
+            tunnel.name
+            for tunnel in self.l2_tunnels
+        ]
+
+        l2_interfaces = [
+            interface
+            for tunnel in self.l2_tunnels
+            for interface in (
+                tunnel.transport.interface,
+                tunnel.bridge.interface,
+                tunnel.encapsulation.interface,
+            )
+        ]
+
+        if len(l2_names) != len(set(l2_names)):
+            raise ValueError("L2 VPN tunnel names must be unique")
+
+        if len(l2_interfaces) != len(set(l2_interfaces)):
             raise ValueError(
-                "VPN must contain at least one tunnel when enabled"
+                "L2 VPN interfaces must be unique"
+            )
+
+        all_interfaces = interfaces + l2_interfaces
+
+        if len(all_interfaces) != len(set(all_interfaces)):
+            raise ValueError(
+                "L3 and L2 VPN interfaces must not conflict"
+            )
+
+        all_names = names + l2_names
+
+        if len(all_names) != len(set(all_names)):
+            raise ValueError(
+                "L3 and L2 VPN tunnel names must not conflict"
+            )
+
+        if (
+            self.enabled
+            and not self.tunnels
+            and not self.l2_tunnels
+        ):
+            raise ValueError(
+                "VPN must contain at least one tunnel (L3 or L2) "
+                "when enabled"
+            )
+
+        return self
+
+
+class WireGuardL2TransportConfig(BaseModel):
+    """WireGuard transport used only to carry an L2 overlay."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    interface: str = Field(min_length=1, max_length=15)
+    address: IPv4Interface
+    private_key_file: Path
+    mtu: int = Field(default=1420, ge=576, le=9000)
+    listen_port: int | None = Field(default=None, ge=1, le=65535)
+    peer: WireGuardPeerConfig
+
+    @field_validator("interface")
+    @classmethod
+    def validate_interface(cls, value: str) -> str:
+        if value == "lo":
+            raise ValueError("L2 transport interface must not be loopback")
+
+        if any(character.isspace() for character in value):
+            raise ValueError(
+                "L2 transport interface must not contain whitespace"
+            )
+
+        return value
+
+
+class GretapConfig(BaseModel):
+    """GRETAP encapsulation carried by the WireGuard transport."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    interface: str = Field(min_length=1, max_length=15)
+    local: IPv4Address
+    remote: IPv4Address
+    mtu: int = Field(default=1376, ge=576, le=9000)
+    ttl: int = Field(default=64, ge=1, le=255)
+
+    @field_validator("interface")
+    @classmethod
+    def validate_interface(cls, value: str) -> str:
+        if value in {"lo", "gretap0"}:
+            raise ValueError(
+                "GRETAP interface uses a reserved system interface name"
+            )
+
+        if any(character.isspace() for character in value):
+            raise ValueError(
+                "GRETAP interface must not contain whitespace"
+            )
+
+        return value
+
+
+class L2BridgeConfig(BaseModel):
+    """Bridge used by an L2 VPN overlay."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    interface: str = Field(min_length=1, max_length=15)
+    address: IPv4Interface | None = None
+    ports: list[str] = Field(default_factory=list)
+
+    @field_validator("ports")
+    @classmethod
+    def validate_ports(cls, value: list[str]) -> list[str]:
+        if len(value) != len(set(value)):
+            raise ValueError("L2 bridge ports must be unique")
+
+        if any(
+            not port or any(character.isspace() for character in port)
+            for port in value
+        ):
+            raise ValueError("L2 bridge ports contain an invalid interface")
+
+        return value
+
+
+class L2VpnTunnelConfig(BaseModel):
+    """One Ethernet-over-WireGuard VPN overlay."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    name: str = Field(min_length=1, max_length=64)
+    enabled: bool = True
+
+    transport: WireGuardL2TransportConfig
+    bridge: L2BridgeConfig
+    encapsulation: GretapConfig
+
+    @model_validator(mode="after")
+    def validate_overlay(self):
+        interfaces = [
+            self.transport.interface,
+            self.bridge.interface,
+            self.encapsulation.interface,
+        ]
+
+        if len(interfaces) != len(set(interfaces)):
+            raise ValueError(
+                "L2 VPN transport, bridge and encapsulation "
+                "interfaces must be different"
+            )
+
+        transport_network = self.transport.address.network
+
+        if self.encapsulation.local not in transport_network:
+            raise ValueError(
+                "GRETAP local address must belong to "
+                "the WireGuard transport network"
+            )
+
+        if self.encapsulation.remote not in transport_network:
+            raise ValueError(
+                "GRETAP remote address must belong to "
+                "the WireGuard transport network"
+            )
+
+        if self.encapsulation.local != self.transport.address.ip:
+            raise ValueError(
+                "GRETAP local address must match "
+                "the WireGuard transport address"
+            )
+
+        if self.encapsulation.local == self.encapsulation.remote:
+            raise ValueError(
+                "GRETAP local and remote addresses must be different"
+            )
+
+        if self.encapsulation.mtu >= self.transport.mtu:
+            raise ValueError(
+                "GRETAP MTU must be smaller than WireGuard transport MTU"
+            )
+
+        if self.encapsulation.interface in self.bridge.ports:
+            raise ValueError(
+                "GRETAP interface is attached automatically and "
+                "must not be listed in bridge ports"
             )
 
         return self

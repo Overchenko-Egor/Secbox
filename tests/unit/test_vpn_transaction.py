@@ -271,3 +271,222 @@ def test_validation_failure_does_not_change_config(
 
     assert store.config_path.read_bytes() == before
     assert store.load().vpn == old_vpn
+
+
+def make_l2_vpn(
+    *,
+    name: str = "site-l2",
+    transport_interface: str = "wg2",
+) -> VpnConfig:
+    return VpnConfig.model_validate(
+        {
+            "enabled": True,
+            "tunnels": [],
+            "l2_tunnels": [
+                {
+                    "name": name,
+                    "enabled": True,
+                    "transport": {
+                        "interface": transport_interface,
+                        "address": "10.202.0.2/30",
+                        "private_key_file": (
+                            f"/etc/secbox/vpn/"
+                            f"{transport_interface}.key"
+                        ),
+                        "mtu": 1420,
+                        "peer": {
+                            "public_key": "l2-peer",
+                            "endpoint": "192.0.2.1:51822",
+                            "allowed_ips": [
+                                "10.202.0.1/32",
+                            ],
+                            "persistent_keepalive": 25,
+                        },
+                    },
+                    "bridge": {
+                        "interface": "br-l2vpn",
+                        "address": "172.30.0.2/24",
+                        "ports": [],
+                    },
+                    "encapsulation": {
+                        "interface": "gt-l2vpn",
+                        "local": "10.202.0.2",
+                        "remote": "10.202.0.1",
+                        "mtu": 1376,
+                        "ttl": 64,
+                    },
+                }
+            ],
+        }
+    )
+
+
+def test_successful_l2_transaction_commits_new_vpn(
+    tmp_path: Path,
+    monkeypatch,
+):
+    store, _ = make_store(
+        tmp_path
+    )
+
+    new_vpn = make_l2_vpn()
+
+    monkeypatch.setattr(
+        transaction,
+        "validate_vpn_key_paths",
+        lambda config: None,
+    )
+
+    transitions = []
+
+    def fake_reconcile(
+        old,
+        new,
+        **kwargs,
+    ):
+        old_l2 = (
+            old.vpn.l2_tunnels
+            if old.vpn is not None
+            else []
+        )
+
+        new_l2 = (
+            new.vpn.l2_tunnels
+            if new.vpn is not None
+            else []
+        )
+
+        transitions.append(
+            (
+                len(old_l2),
+                len(new_l2),
+            )
+        )
+
+        return VpnTransitionResult(
+            applied_tunnels=0,
+            removed_tunnels=1,
+            active_name=None,
+            active_interface=None,
+            applied_l2_tunnels=len(new_l2),
+            removed_l2_tunnels=0,
+        )
+
+    monkeypatch.setattr(
+        transaction,
+        "reconcile_vpn_config",
+        fake_reconcile,
+    )
+
+    result = transaction.apply_vpn_transaction(
+        store,
+        new_vpn,
+    )
+
+    assert store.load().vpn == new_vpn
+    assert result.config.vpn == new_vpn
+
+    assert (
+        result.apply_result.applied_l2_tunnels
+        == 1
+    )
+
+    assert transitions == [
+        (0, 1)
+    ]
+
+
+def test_failed_l2_apply_rolls_back_runtime_and_config(
+    tmp_path: Path,
+    monkeypatch,
+):
+    store = ConfigStore(
+        tmp_path / "config.yml"
+    )
+
+    old_vpn = make_l2_vpn(
+        name="old-l2",
+        transport_interface="wg2",
+    )
+
+    store.save(
+        SecBoxConfig(
+            vpn=old_vpn,
+        )
+    )
+
+    new_vpn = make_l2_vpn(
+        name="new-l2",
+        transport_interface="wg3",
+    )
+
+    monkeypatch.setattr(
+        transaction,
+        "validate_vpn_key_paths",
+        lambda config: None,
+    )
+
+    transitions = []
+
+    def fake_reconcile(
+        old,
+        new,
+        **kwargs,
+    ):
+        old_interface = (
+            old.vpn
+            .l2_tunnels[0]
+            .transport.interface
+        )
+
+        new_interface = (
+            new.vpn
+            .l2_tunnels[0]
+            .transport.interface
+        )
+
+        transitions.append(
+            (
+                old_interface,
+                new_interface,
+            )
+        )
+
+        if (
+            old_interface == "wg2"
+            and new_interface == "wg3"
+        ):
+            raise RuntimeError(
+                "simulated L2 apply failure"
+            )
+
+        return VpnTransitionResult(
+            applied_tunnels=0,
+            removed_tunnels=0,
+            active_name=None,
+            active_interface=None,
+            applied_l2_tunnels=1,
+            removed_l2_tunnels=1,
+        )
+
+    monkeypatch.setattr(
+        transaction,
+        "reconcile_vpn_config",
+        fake_reconcile,
+    )
+
+    with pytest.raises(
+        transaction.VpnTransactionError,
+        match="simulated L2 apply failure",
+    ):
+        transaction.apply_vpn_transaction(
+            store,
+            new_vpn,
+        )
+
+    assert store.load().vpn == old_vpn
+
+    assert transitions == [
+        ("wg2", "wg3"),
+        ("wg3", "wg2"),
+    ]

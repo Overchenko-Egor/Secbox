@@ -7,10 +7,15 @@ from secbox.modules.vpn.executor import (
     apply_wireguard_tunnel,
     remove_wireguard_tunnel,
 )
+from secbox.modules.vpn.l2_executor import (
+    apply_l2_vpn_tunnel,
+    remove_l2_vpn_tunnel,
+)
 from secbox.modules.vpn.failover import (
     activate_tunnel,
 )
 from secbox.modules.vpn.models import (
+    L2VpnTunnelConfig,
     WireGuardTunnelConfig,
 )
 from secbox.modules.vpn.routing import (
@@ -36,6 +41,7 @@ class VpnApplyResult:
     applied_tunnels: int
     active_name: str
     active_interface: str
+    applied_l2_tunnels: int = 0
 
 
 @dataclass(frozen=True)
@@ -46,6 +52,8 @@ class VpnTransitionResult:
     removed_tunnels: int
     active_name: str | None
     active_interface: str | None
+    applied_l2_tunnels: int = 0
+    removed_l2_tunnels: int = 0
 
 
 def _enabled_tunnels(
@@ -60,6 +68,24 @@ def _enabled_tunnels(
     return [
         tunnel
         for tunnel in config.vpn.tunnels
+        if tunnel.enabled
+    ]
+
+
+def _enabled_l2_tunnels(
+    config: SecBoxConfig,
+) -> list[L2VpnTunnelConfig]:
+    """Return enabled L2 VPN overlays from configuration."""
+
+    if (
+        config.vpn is None
+        or not config.vpn.enabled
+    ):
+        return []
+
+    return [
+        tunnel
+        for tunnel in config.vpn.l2_tunnels
         if tunnel.enabled
     ]
 
@@ -111,8 +137,17 @@ def apply_vpn_config(
         config
     )
 
+    enabled_l2_tunnels = _enabled_l2_tunnels(
+        config
+    )
+
     for tunnel in enabled_tunnels:
         apply_wireguard_tunnel(
+            tunnel
+        )
+
+    for tunnel in enabled_l2_tunnels:
+        apply_l2_vpn_tunnel(
             tunnel
         )
 
@@ -135,6 +170,9 @@ def apply_vpn_config(
         ),
         active_name=initial_tunnel.name,
         active_interface=initial_tunnel.interface,
+        applied_l2_tunnels=len(
+            enabled_l2_tunnels
+        ),
     )
 
 
@@ -158,7 +196,18 @@ def reconcile_vpn_config(
         previous_config
     )
 
-    if desired_tunnels and validate_keys:
+    desired_l2_tunnels = _enabled_l2_tunnels(
+        desired_config
+    )
+
+    previous_l2_tunnels = _enabled_l2_tunnels(
+        previous_config
+    )
+
+    if (
+        desired_tunnels
+        or desired_l2_tunnels
+    ) and validate_keys:
         validate_vpn_key_paths(
             desired_config
         )
@@ -173,6 +222,16 @@ def reconcile_vpn_config(
         for tunnel in desired_tunnels
     }
 
+    previous_l2_by_name = {
+        tunnel.name: tunnel
+        for tunnel in previous_l2_tunnels
+    }
+
+    desired_l2_by_name = {
+        tunnel.name: tunnel
+        for tunnel in desired_l2_tunnels
+    }
+
     #
     # First create/update desired tunnels.
     # Existing working tunnels remain available while the new desired
@@ -180,6 +239,15 @@ def reconcile_vpn_config(
     #
     for tunnel in desired_tunnels:
         apply_wireguard_tunnel(
+            tunnel
+        )
+
+    #
+    # L2 overlays are independent of the L3 failover pool.
+    # Reconcile them as part of the same desired-state transition.
+    #
+    for tunnel in desired_l2_tunnels:
+        apply_l2_vpn_tunnel(
             tunnel
         )
 
@@ -239,6 +307,22 @@ def reconcile_vpn_config(
 
         removed_tunnels += 1
 
+    stale_l2_names = (
+        set(previous_l2_by_name)
+        - set(desired_l2_by_name)
+    )
+
+    removed_l2_tunnels = 0
+
+    for name in sorted(
+        stale_l2_names
+    ):
+        remove_l2_vpn_tunnel(
+            previous_l2_by_name[name]
+        )
+
+        removed_l2_tunnels += 1
+
     #
     # A tunnel can keep the same interface but move to another table.
     # Clean old tables which are no longer referenced by desired state.
@@ -288,4 +372,8 @@ def reconcile_vpn_config(
             if active_tunnel is not None
             else None
         ),
+        applied_l2_tunnels=len(
+            desired_l2_tunnels
+        ),
+        removed_l2_tunnels=removed_l2_tunnels,
     )
