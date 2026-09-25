@@ -135,3 +135,72 @@ def test_l3_and_l2_interfaces_cannot_collide():
 
     with pytest.raises(ValidationError):
         VpnConfig.model_validate(raw)
+
+
+def test_l2_apply_attaches_physical_bridge_port(
+    monkeypatch,
+):
+    from secbox.modules.vpn import l2_executor
+
+    raw = l2_tunnel().model_dump(
+        mode="python"
+    )
+
+    raw["bridge"]["ports"] = [
+        "ens37",
+    ]
+
+    tunnel = L2VpnTunnelConfig.model_validate(
+        raw
+    )
+
+    commands = []
+
+    monkeypatch.setattr(
+        l2_executor,
+        "_interface_exists",
+        lambda interface: True,
+    )
+
+    def fake_run(
+        command,
+        *,
+        check=True,
+    ):
+        commands.append(command)
+
+        class Result:
+            returncode = 0
+            stdout = ""
+            stderr = ""
+
+        return Result()
+
+    monkeypatch.setattr(
+        l2_executor,
+        "_run",
+        fake_run,
+    )
+
+    l2_executor.apply_l2_vpn_tunnel(
+        tunnel
+    )
+
+    assert [
+        "/usr/sbin/ip",
+        "link",
+        "set",
+        "dev",
+        "ens37",
+        "master",
+        "br-l2vpn",
+    ] in commands
+
+    assert [
+        "/usr/sbin/ip",
+        "link",
+        "set",
+        "dev",
+        "ens37",
+        "up",
+    ] in commands

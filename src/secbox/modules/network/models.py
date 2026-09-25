@@ -13,6 +13,7 @@ InterfaceRole = Literal[
     "mgmt",
     "sandbox",
     "unused",
+    "l2",
 ]
 
 IPv4Method = Literal[
