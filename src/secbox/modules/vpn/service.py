@@ -1,5 +1,7 @@
 """High-level VPN pool application and reconciliation service."""
 
+import subprocess
+
 from dataclasses import dataclass
 
 from secbox.core.models import SecBoxConfig
@@ -247,6 +249,31 @@ def reconcile_vpn_config(
     # Reconcile them as part of the same desired-state transition.
     #
     for tunnel in desired_l2_tunnels:
+        previous_l2 = previous_l2_by_name.get(
+            tunnel.name
+        )
+
+        if previous_l2 is not None:
+            stale_ports = (
+                set(previous_l2.bridge.ports)
+                - set(tunnel.bridge.ports)
+            )
+
+            for interface in sorted(stale_ports):
+                subprocess.run(
+                    [
+                        "/usr/sbin/ip",
+                        "link",
+                        "set",
+                        "dev",
+                        interface,
+                        "nomaster",
+                    ],
+                    check=False,
+                    capture_output=True,
+                    text=True,
+                )
+
         apply_l2_vpn_tunnel(
             tunnel
         )

@@ -44,6 +44,50 @@ def _validate_managed_key_path(
         )
 
 
+def validate_l2_access_ports(config: SecBoxConfig) -> None:
+    """Validate ownership and network roles of L2 VPN access ports."""
+
+    vpn = config.vpn
+
+    if vpn is None or not vpn.enabled:
+        return
+
+    interfaces_by_name = {
+        interface.name: interface
+        for interface in config.network.interfaces
+    }
+
+    used_ports: dict[str, str] = {}
+
+    for tunnel in vpn.l2_tunnels:
+        if not tunnel.enabled:
+            continue
+
+        for port in tunnel.bridge.ports:
+            interface = interfaces_by_name.get(port)
+
+            if interface is None:
+                raise VpnValidationError(
+                    f"L2 VPN bridge port {port!r} is not present "
+                    "in network configuration"
+                )
+
+            if interface.role != "l2":
+                raise VpnValidationError(
+                    f"L2 VPN bridge port {port!r} must have role 'l2'"
+                )
+
+            owner = used_ports.get(port)
+
+            if owner is not None:
+                raise VpnValidationError(
+                    f"L2 VPN bridge port {port!r} is used by "
+                    f"multiple tunnels: {owner!r} and {tunnel.name!r}"
+                )
+
+            used_ports[port] = tunnel.name
+
+
 def validate_vpn_against_interfaces(
     vpn: VpnConfig | None,
     physical_interfaces: Collection[str],
