@@ -56,7 +56,7 @@ def _load_doh_managed_state(config):
 def preview_config(config: SecBoxConfig, interfaces: list[NetworkInterfaceState]) -> ConfigPreview:
     validate_network_preflight(config.network, interfaces)
     validate_management_interface(config.network, interfaces)
-    validate_dhcp_preflight(config.dhcp, config.network)
+    validate_dhcp_preflight(config.dhcp, config.network, config.vpn)
     validate_content_filter_config(config)
     if config.firewall is not None and config.firewall.enabled:
         validate_firewall_preflight(config.firewall, config.network)

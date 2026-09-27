@@ -13,6 +13,11 @@ from starlette.middleware.base import RequestResponseEndpoint
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
 
+from secbox.modules.network.validator import validate_management_interface
+from secbox.modules.network.validator import validate_network_preflight
+from secbox.modules.dhcp.validator import validate_dhcp_preflight
+from secbox.modules.content_filter.validator import validate_content_filter_config
+from secbox.modules.vpn.validator import validate_l2_access_ports
 from secbox.core.config_store import ConfigNotFoundError, ConfigStore, ConfigStoreError, ConfigValidationError
 from secbox.core.models import SecBoxConfig
 from secbox.core.version import __version__
@@ -46,6 +51,8 @@ from secbox.web.actions import (
     WebActionTimeoutError,
     apply_vpn_via_helper,
     get_vpn_via_helper,
+    apply_network_dhcp_via_helper,
+    get_network_dhcp_via_helper,
 )
 from secbox.web.vpn_config import (
     VpnConfigPreviewRequest,
@@ -54,6 +61,12 @@ from secbox.web.vpn_config import (
     VpnConfigReadResponse,
     VpnValidationError,
     validate_vpn_candidate,
+)
+from secbox.web.network_dhcp_config import (
+    NetworkDhcpApplyResponse,
+    NetworkDhcpConfigPayload,
+    NetworkDhcpConfigReadResponse,
+    NetworkDhcpValidationResponse,
 )
 from secbox.web.settings import WebSettings
 
@@ -366,6 +379,151 @@ def create_app(settings: WebSettings | None = None) -> FastAPI:
                 503,
                 "VPN event history is not readable",
             ) from error
+
+
+    @router.get(
+        "/api/v1/network/config",
+        response_model=NetworkDhcpConfigReadResponse,
+        tags=["network"],
+    )
+    def network_config_get() -> NetworkDhcpConfigReadResponse:
+        """Return editable Network and DHCP desired state."""
+
+        try:
+            network, dhcp = get_network_dhcp_via_helper()
+
+        except WebActionTimeoutError as error:
+            raise HTTPException(
+                504,
+                "Network/DHCP configuration read timed out",
+            ) from error
+
+        except WebActionError as error:
+            raise HTTPException(
+                503,
+                "Network/DHCP configuration could not be read",
+            ) from error
+
+        return NetworkDhcpConfigReadResponse(
+            network=network,
+            dhcp=dhcp,
+        )
+
+
+    @router.post(
+        "/api/v1/network/config/validate",
+        response_model=NetworkDhcpValidationResponse,
+        tags=["network"],
+    )
+    def network_config_validate(
+        payload: NetworkDhcpConfigPayload,
+    ) -> NetworkDhcpValidationResponse:
+        """Validate Network/DHCP without changing runtime state."""
+
+        try:
+            # The Web service deliberately cannot read
+            # /etc/secbox/config.yml directly.
+            #
+            # Read the current Network/DHCP state through the
+            # privileged helper instead.
+            current_network, current_dhcp = (
+                get_network_dhcp_via_helper()
+            )
+
+            # The submitted payload has already passed the
+            # strict Pydantic Network/DHCP models.
+            #
+            # Runtime/cross-module validation that requires the
+            # complete SecBox configuration is performed again
+            # by the privileged action during Apply.
+            runtime_interfaces = discover_interfaces()
+
+            validate_network_preflight(
+                payload.network,
+                runtime_interfaces,
+            )
+
+            validate_management_interface(
+                payload.network,
+                runtime_interfaces,
+            )
+
+            # Make sure the helper result itself remains
+            # parseable and available. It is intentionally
+            # fetched above rather than reading config.yml.
+            _ = current_network, current_dhcp
+
+        except WebActionTimeoutError as error:
+            raise HTTPException(
+                504,
+                "Network/DHCP validation helper timed out",
+            ) from error
+
+        except WebActionError as error:
+            raise HTTPException(
+                503,
+                "Network/DHCP configuration could not be read",
+            ) from error
+
+        except (
+            NetworkDiscoveryError,
+            NetworkPreflightError,
+            ValueError,
+        ) as error:
+            raise HTTPException(
+                422,
+                str(error),
+            ) from error
+
+        return NetworkDhcpValidationResponse(
+            valid=True
+        )
+
+
+    @router.put(
+        "/api/v1/network/config",
+        response_model=NetworkDhcpApplyResponse,
+        tags=["network"],
+    )
+    def network_config_apply(
+        payload: NetworkDhcpConfigPayload,
+    ) -> NetworkDhcpApplyResponse:
+        """Validate and transactionally apply Network + DHCP."""
+
+        # Always run the same unprivileged validation first.
+        network_config_validate(payload)
+
+        try:
+            result = apply_network_dhcp_via_helper(
+                payload.network,
+                payload.dhcp,
+            )
+
+        except WebActionBusyError as error:
+            raise HTTPException(
+                409,
+                "Another configuration action is running",
+            ) from error
+
+        except WebActionTimeoutError as error:
+            raise HTTPException(
+                504,
+                "Network/DHCP configuration action timed out",
+            ) from error
+
+        except WebActionError as error:
+            raise HTTPException(
+                500,
+                "Network/DHCP configuration action failed",
+            ) from error
+
+        return NetworkDhcpApplyResponse(
+            ok=True,
+            interfaces=result.interfaces,
+            dhcp_scopes=result.dhcp_scopes,
+            enabled_dhcp_scopes=result.enabled_dhcp_scopes,
+        )
+
 
     @router.get("/api/v1/network/status", tags=["network"])
     def network_status() -> NetworkStatus:

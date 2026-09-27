@@ -767,3 +767,158 @@ main{margin-left:230px;max-width:1560px;padding:36px 44px}header{display:flex;ju
 }
 
 /* SECBOX VPN FEEDBACK END */
+
+
+/* ==========================================================
+   Network + DHCP editor
+   ========================================================== */
+
+#network-config-editor {
+    margin-top: 24px;
+}
+
+.config-header,
+.network-section-heading,
+.network-card-title {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+}
+
+.config-header {
+    margin-bottom: 16px;
+}
+
+.network-section-heading {
+    margin-top: 28px;
+    margin-bottom: 12px;
+}
+
+.network-interface-list,
+.dhcp-scope-list {
+    display: grid;
+    gap: 14px;
+}
+
+.network-card,
+.dhcp-card {
+    border: 1px solid var(--border-color, #30363d);
+    border-radius: 10px;
+    padding: 16px;
+    background: var(--panel-bg, rgba(255, 255, 255, 0.02));
+}
+
+.network-card-title {
+    margin-bottom: 14px;
+}
+
+.network-role-badge {
+    display: inline-block;
+    margin-left: 8px;
+    padding: 3px 8px;
+    border-radius: 999px;
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    background: rgba(110, 168, 254, 0.14);
+}
+
+.network-card-warning {
+    max-width: 420px;
+    font-size: 12px;
+    opacity: 0.78;
+    text-align: right;
+}
+
+.network-form-grid {
+    display: grid;
+    grid-template-columns:
+        repeat(auto-fit, minmax(210px, 1fr));
+    gap: 14px;
+}
+
+.network-form-grid label {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.network-form-grid label > span {
+    font-size: 12px;
+    opacity: 0.75;
+}
+
+.network-form-grid input,
+.network-form-grid select {
+    width: 100%;
+    box-sizing: border-box;
+}
+
+.checkbox-field {
+    justify-content: center;
+}
+
+.checkbox-field input {
+    width: auto;
+}
+
+.network-warning {
+    margin: 14px 0 22px;
+    padding: 12px 14px;
+    border-radius: 8px;
+    border: 1px solid rgba(255, 193, 7, 0.4);
+    background: rgba(255, 193, 7, 0.08);
+    font-size: 13px;
+    line-height: 1.5;
+}
+
+.network-config-actions {
+    margin-top: 20px;
+}
+
+.danger-link {
+    border: 0;
+    background: transparent;
+    cursor: pointer;
+    color: #ff6b6b;
+    padding: 4px 8px;
+}
+
+#network-config-message {
+    margin: 12px 0;
+    padding: 10px 12px;
+    border-radius: 8px;
+}
+
+#network-config-message.success {
+    background: rgba(46, 160, 67, 0.12);
+    border: 1px solid rgba(46, 160, 67, 0.4);
+}
+
+#network-config-message.error {
+    background: rgba(248, 81, 73, 0.12);
+    border: 1px solid rgba(248, 81, 73, 0.4);
+}
+
+#network-config-message.info {
+    background: rgba(88, 166, 255, 0.10);
+    border: 1px solid rgba(88, 166, 255, 0.35);
+}
+
+@media (max-width: 760px) {
+    .config-header,
+    .network-section-heading,
+    .network-card-title {
+        align-items: flex-start;
+        flex-direction: column;
+    }
+
+    .network-card-warning {
+        text-align: left;
+    }
+
+    .network-form-grid {
+        grid-template-columns: 1fr;
+    }
+}

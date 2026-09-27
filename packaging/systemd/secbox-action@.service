@@ -29,6 +29,8 @@ ProtectSystem=strict
 ReadWritePaths=/etc/secbox
 ReadWritePaths=/run/secbox
 ReadWritePaths=/var/lib/secbox
+ReadWritePaths=/etc/systemd/network
+ReadWritePaths=/etc/dnsmasq.d
 
 ProtectKernelTunables=true
 ProtectKernelModules=true

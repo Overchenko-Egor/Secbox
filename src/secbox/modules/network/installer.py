@@ -58,6 +58,7 @@ def install_networkd_files(
                 source_file,
                 destination,
             )
+            destination.chmod(0o644)
 
             installed.append(destination)
 
@@ -97,6 +98,7 @@ def restore_networkd_backup(
             backup_file,
             destination,
         )
+        destination.chmod(0o644)
 
         restored.append(destination)
 

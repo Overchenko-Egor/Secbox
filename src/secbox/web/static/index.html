@@ -129,6 +129,86 @@
     </section>
 
     <section id="network" class="panel">
+
+        <div id="network-config-editor" class="config-editor">
+          <div class="config-header">
+            <div>
+              <h2>Конфигурация сети</h2>
+              <p class="muted">
+                Физические интерфейсы SecBox, IPv4 и DHCP.
+              </p>
+            </div>
+
+            <button
+              id="network-config-reload"
+              class="secondary-button"
+              type="button"
+            >
+              Обновить
+            </button>
+          </div>
+
+          <div
+            id="network-config-message"
+            class="config-message"
+            hidden
+          ></div>
+
+          <div class="network-warning">
+            <strong>Внимание:</strong>
+            изменение MGMT-интерфейса может привести к потере
+            доступа к Web UI. L2-интерфейсы, используемые VPN,
+            также не следует менять без изменения L2 VPN.
+          </div>
+
+          <h3>Интерфейсы</h3>
+
+          <div
+            id="network-interface-list"
+            class="network-interface-list"
+          ></div>
+
+          <div class="network-section-heading">
+            <div>
+              <h3>DHCP</h3>
+              <p class="muted">
+                DHCP-серверы для LAN и L2 bridge.
+              </p>
+            </div>
+
+            <button
+              id="dhcp-add-scope"
+              class="secondary-button"
+              type="button"
+            >
+              + Добавить DHCP
+            </button>
+          </div>
+
+          <div
+            id="dhcp-scope-list"
+            class="dhcp-scope-list"
+          ></div>
+
+          <div class="config-actions network-config-actions">
+            <button
+              id="network-config-validate"
+              class="secondary-button"
+              type="button"
+            >
+              Проверить
+            </button>
+
+            <button
+              id="network-config-apply"
+              class="primary-button"
+              type="button"
+            >
+              Применить
+            </button>
+          </div>
+        </div>
+
       <div class="section-heading"><div><p class="eyebrow">Сеть</p><h2>Интерфейсы</h2></div><span class="tag">Текущее состояние</span></div>
       <p id="network-error" class="error" role="status"></p>
       <div class="table-wrap"><table><thead><tr><th>Интерфейс</th><th>Состояние</th><th>IP-адреса</th><th>MAC</th><th>MTU</th></tr></thead><tbody id="interfaces-body"></tbody></table></div>

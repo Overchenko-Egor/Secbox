@@ -19,6 +19,14 @@ from secbox.actions.vpn import (
     get_vpn_action,
 )
 from secbox.modules.vpn.models import VpnConfig
+from secbox.modules.network.models import NetworkConfig
+from secbox.modules.dhcp.models import DhcpServerConfig
+from secbox.actions.network_dhcp import (
+    NetworkDhcpActionError,
+    NetworkDhcpActionResult,
+    apply_network_dhcp_action,
+    get_network_dhcp_action,
+)
 
 
 MAX_INPUT_BYTES = 1024 * 1024
@@ -218,6 +226,104 @@ def _handle_vpn(
         )
 
 
+
+def _network_dhcp_result_payload(
+    result: NetworkDhcpActionResult,
+) -> dict[str, object]:
+    return {
+        "ok": True,
+        "result": {
+            "interfaces": result.interfaces,
+            "dhcp_scopes": result.dhcp_scopes,
+            "enabled_dhcp_scopes": result.enabled_dhcp_scopes,
+        },
+    }
+
+
+def _execute_network_dhcp(
+    network_payload: object,
+    dhcp_payload: object,
+) -> dict[str, object]:
+    network = NetworkConfig.model_validate(
+        network_payload
+    )
+
+    if not isinstance(dhcp_payload, list):
+        raise ValueError(
+            "dhcp must be an array"
+        )
+
+    dhcp = [
+        DhcpServerConfig.model_validate(item)
+        for item in dhcp_payload
+    ]
+
+    with configuration_lock():
+        result = apply_network_dhcp_action(
+            network,
+            dhcp,
+        )
+
+    return _network_dhcp_result_payload(
+        result
+    )
+
+
+def _handle_network_dhcp(
+    network_payload: object,
+    dhcp_payload: object,
+) -> tuple[dict[str, object], int]:
+    try:
+        return (
+            _execute_network_dhcp(
+                network_payload,
+                dhcp_payload,
+            ),
+            0,
+        )
+
+    except ActionBusyError:
+        return (
+            {
+                "ok": False,
+                "error": "busy",
+            },
+            EXIT_BUSY,
+        )
+
+    except (
+        ValidationError,
+        ValueError,
+    ):
+        return (
+            {
+                "ok": False,
+                "error": "invalid_request",
+            },
+            EXIT_FAILED,
+        )
+
+    except NetworkDhcpActionError as error:
+        return (
+            {
+                "ok": False,
+                "error": "transaction_failed",
+                "detail": str(error),
+            },
+            EXIT_FAILED,
+        )
+
+    except Exception:
+        return (
+            {
+                "ok": False,
+                "error": "internal_error",
+            },
+            EXIT_FAILED,
+        )
+
+
+
 @app.command("apply-vpn")
 def apply_vpn() -> None:
     """Apply a complete VPN configuration supplied as JSON on stdin."""
@@ -276,6 +382,60 @@ def socket_request() -> None:
         action = request.get(
             "action"
         )
+
+        if action == "get-network-dhcp":
+            if set(request) != {
+                "action",
+            }:
+                raise ValueError(
+                    "unexpected get-network-dhcp fields"
+                )
+
+            network, dhcp = get_network_dhcp_action()
+
+            _emit(
+                {
+                    "ok": True,
+                    "result": {
+                        "network": network.model_dump(
+                            mode="json"
+                        ),
+                        "dhcp": [
+                            scope.model_dump(
+                                mode="json"
+                            )
+                            for scope in dhcp
+                        ],
+                    },
+                }
+            )
+            return
+
+        if action == "apply-network-dhcp":
+            if set(request) != {
+                "action",
+                "network",
+                "dhcp",
+            }:
+                raise ValueError(
+                    "unexpected apply-network-dhcp fields"
+                )
+
+            response, code = _handle_network_dhcp(
+                request["network"],
+                request["dhcp"],
+            )
+
+            _emit(
+                response
+            )
+
+            if code:
+                raise typer.Exit(
+                    code
+                )
+
+            return
 
         if action == "get-vpn":
             if set(request) != {

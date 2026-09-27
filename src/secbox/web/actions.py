@@ -6,6 +6,8 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from secbox.modules.vpn.models import VpnConfig
+from secbox.modules.network.models import NetworkConfig
+from secbox.modules.dhcp.models import DhcpServerConfig
 
 
 ACTION_SOCKET = Path(
@@ -238,4 +240,127 @@ def get_vpn_via_helper() -> VpnConfig:
     except Exception as error:
         raise WebActionError(
             "privileged helper returned invalid VPN configuration"
+        ) from error
+
+
+@dataclass(frozen=True)
+class WebNetworkDhcpApplyResult:
+    interfaces: int
+    dhcp_scopes: int
+    enabled_dhcp_scopes: int
+
+
+def get_network_dhcp_via_helper(
+) -> tuple[NetworkConfig, list[DhcpServerConfig]]:
+    response = _exchange(
+        {
+            "action": "get-network-dhcp",
+        }
+    )
+
+    if response.get("ok") is not True:
+        raise WebActionError(
+            "privileged Network/DHCP read failed"
+        )
+
+    data = response.get("result")
+
+    if not isinstance(data, dict):
+        raise WebActionError(
+            "privileged helper returned invalid Network/DHCP data"
+        )
+
+    raw_network = data.get("network")
+    raw_dhcp = data.get("dhcp")
+
+    if not isinstance(raw_dhcp, list):
+        raise WebActionError(
+            "privileged helper returned invalid DHCP data"
+        )
+
+    try:
+        network = NetworkConfig.model_validate(
+            raw_network
+        )
+
+        dhcp = [
+            DhcpServerConfig.model_validate(item)
+            for item in raw_dhcp
+        ]
+
+    except Exception as error:
+        raise WebActionError(
+            "privileged helper returned invalid Network/DHCP configuration"
+        ) from error
+
+    return network, dhcp
+
+
+def apply_network_dhcp_via_helper(
+    network: NetworkConfig,
+    dhcp: list[DhcpServerConfig],
+) -> WebNetworkDhcpApplyResult:
+    response = _exchange(
+        {
+            "action": "apply-network-dhcp",
+            "network": network.model_dump(
+                mode="json"
+            ),
+            "dhcp": [
+                scope.model_dump(
+                    mode="json"
+                )
+                for scope in dhcp
+            ],
+        }
+    )
+
+    error = response.get("error")
+
+    if error == "busy":
+        raise WebActionBusyError(
+            "another configuration action is running"
+        )
+
+    if response.get("ok") is not True:
+        detail = response.get("detail")
+
+        if (
+            isinstance(detail, str)
+            and detail.strip()
+        ):
+            raise WebActionError(
+                detail.strip()
+            )
+
+        raise WebActionError(
+            "privileged Network/DHCP action failed"
+        )
+
+    data = response.get("result")
+
+    if not isinstance(data, dict):
+        raise WebActionError(
+            "privileged helper returned invalid Network/DHCP result"
+        )
+
+    try:
+        return WebNetworkDhcpApplyResult(
+            interfaces=int(
+                data["interfaces"]
+            ),
+            dhcp_scopes=int(
+                data["dhcp_scopes"]
+            ),
+            enabled_dhcp_scopes=int(
+                data["enabled_dhcp_scopes"]
+            ),
+        )
+    except (
+        KeyError,
+        TypeError,
+        ValueError,
+    ) as error:
+        raise WebActionError(
+            "privileged helper returned invalid Network/DHCP result"
         ) from error

@@ -1585,3 +1585,680 @@ refresh();
   }
 })();
  /* SECBOX VPN CONFIGURATION UI END */
+
+
+// ============================================================
+// Network + DHCP configuration
+// ============================================================
+
+let networkDhcpState = null;
+
+
+function networkConfigMessage(message, type = "info") {
+    const element = document.getElementById(
+        "network-config-message"
+    );
+
+    if (!element) {
+        return;
+    }
+
+    element.textContent = message;
+    element.hidden = !message;
+
+    element.classList.remove(
+        "success",
+        "error",
+        "info"
+    );
+
+    element.classList.add(type);
+}
+
+
+function networkEscape(value) {
+    return String(value ?? "")
+        .replaceAll("&", "&amp;")
+        .replaceAll("<", "&lt;")
+        .replaceAll(">", "&gt;")
+        .replaceAll('"', "&quot;");
+}
+
+
+function networkInterfaceCard(iface, index) {
+    const isMgmt = iface.role === "mgmt";
+    const isL2 = iface.role === "l2";
+
+    const warning = isMgmt
+        ? "MGMT — изменение адреса может разорвать Web-сессию."
+        : (
+            isL2
+                ? "L2 — интерфейс может использоваться L2 VPN."
+                : ""
+        );
+
+    return `
+      <div class="network-card" data-network-index="${index}">
+        <div class="network-card-title">
+          <div>
+            <strong>${networkEscape(iface.name)}</strong>
+            <span class="network-role-badge">
+              ${networkEscape(iface.role)}
+            </span>
+          </div>
+
+          ${
+              warning
+                  ? `<span class="network-card-warning">
+                       ${networkEscape(warning)}
+                     </span>`
+                  : ""
+          }
+        </div>
+
+        <div class="network-form-grid">
+          <label>
+            <span>Роль</span>
+            <select
+              class="network-role"
+              ${isMgmt || isL2 ? "disabled" : ""}
+            >
+              ${["wan", "lan", "mgmt", "l2"].map(role => `
+                <option
+                  value="${role}"
+                  ${role === iface.role ? "selected" : ""}
+                >
+                  ${role.toUpperCase()}
+                </option>
+              `).join("")}
+            </select>
+          </label>
+
+          <label>
+            <span>IPv4</span>
+            <select class="network-ipv4-method">
+              ${["dhcp", "static", "disabled"].map(method => `
+                <option
+                  value="${method}"
+                  ${method === iface.ipv4_method ? "selected" : ""}
+                >
+                  ${method}
+                </option>
+              `).join("")}
+            </select>
+          </label>
+
+          <label>
+            <span>IPv4 адрес / prefix</span>
+            <input
+              class="network-ipv4-address"
+              type="text"
+              placeholder="192.168.50.1/24"
+              value="${
+                  iface.ipv4_method === "static"
+                      ? networkEscape(iface.ipv4_address || "")
+                      : ""
+              }"
+              ${
+                  iface.ipv4_method !== "static"
+                      ? "disabled"
+                      : ""
+              }
+            >
+          </label>
+
+          <label>
+            <span>Routing table</span>
+            <input
+              class="network-routing-table"
+              type="number"
+              min="1"
+              max="4294967295"
+              placeholder="не задана"
+              value="${
+                  iface.routing_table === null ||
+                  iface.routing_table === undefined
+                      ? ""
+                      : networkEscape(iface.routing_table)
+              }"
+            >
+          </label>
+        </div>
+      </div>
+    `;
+}
+
+
+function dhcpScopeCard(scope, index) {
+    return `
+      <div class="dhcp-card" data-dhcp-index="${index}">
+        <div class="network-card-title">
+          <strong>
+            DHCP ${index + 1}
+          </strong>
+
+          <button
+            type="button"
+            class="danger-link dhcp-remove"
+          >
+            Удалить
+          </button>
+        </div>
+
+        <div class="network-form-grid">
+          <label class="checkbox-field">
+            <input
+              class="dhcp-enabled"
+              type="checkbox"
+              ${scope.enabled ? "checked" : ""}
+            >
+            <span>Включён</span>
+          </label>
+
+          <label>
+            <span>Интерфейс</span>
+            <input
+              class="dhcp-interface"
+              type="text"
+              placeholder="ens36 или br-l2vpn"
+              value="${networkEscape(scope.interface || "")}"
+            >
+          </label>
+
+          <label>
+            <span>Сеть</span>
+            <input
+              class="dhcp-network"
+              type="text"
+              placeholder="192.168.50.0/24"
+              value="${networkEscape(scope.network || "")}"
+            >
+          </label>
+
+          <label>
+            <span>Начало диапазона</span>
+            <input
+              class="dhcp-range-start"
+              type="text"
+              placeholder="192.168.50.100"
+              value="${networkEscape(scope.range_start || "")}"
+            >
+          </label>
+
+          <label>
+            <span>Конец диапазона</span>
+            <input
+              class="dhcp-range-end"
+              type="text"
+              placeholder="192.168.50.200"
+              value="${networkEscape(scope.range_end || "")}"
+            >
+          </label>
+
+          <label>
+            <span>Gateway</span>
+            <input
+              class="dhcp-gateway"
+              type="text"
+              placeholder="192.168.50.1"
+              value="${networkEscape(scope.gateway || "")}"
+            >
+          </label>
+
+          <label>
+            <span>DNS</span>
+            <input
+              class="dhcp-dns"
+              type="text"
+              placeholder="192.168.50.1, 1.1.1.1"
+              value="${networkEscape(
+                  (scope.dns_servers || []).join(", ")
+              )}"
+            >
+          </label>
+
+          <label>
+            <span>Lease time</span>
+            <input
+              class="dhcp-lease-time"
+              type="text"
+              placeholder="1h"
+              value="${networkEscape(scope.lease_time || "1h")}"
+            >
+          </label>
+        </div>
+      </div>
+    `;
+}
+
+
+function renderNetworkDhcpConfig() {
+    if (!networkDhcpState) {
+        return;
+    }
+
+    const interfaceList = document.getElementById(
+        "network-interface-list"
+    );
+
+    const dhcpList = document.getElementById(
+        "dhcp-scope-list"
+    );
+
+    if (!interfaceList || !dhcpList) {
+        return;
+    }
+
+    interfaceList.innerHTML =
+        networkDhcpState.network.interfaces
+            .map(networkInterfaceCard)
+            .join("");
+
+    dhcpList.innerHTML =
+        networkDhcpState.dhcp
+            .map(dhcpScopeCard)
+            .join("");
+
+    bindNetworkEditorEvents();
+}
+
+
+function bindNetworkEditorEvents() {
+    document
+        .querySelectorAll(".network-ipv4-method")
+        .forEach(select => {
+            select.addEventListener("change", event => {
+                const card = event.target.closest(
+                    ".network-card"
+                );
+
+                const address = card.querySelector(
+                    ".network-ipv4-address"
+                );
+
+                const staticMode =
+                    event.target.value === "static";
+
+                address.disabled = !staticMode;
+
+                if (!staticMode) {
+                    address.value = "";
+                }
+            });
+        });
+
+    document
+        .querySelectorAll(".dhcp-remove")
+        .forEach(button => {
+            button.addEventListener("click", event => {
+                const card = event.target.closest(
+                    ".dhcp-card"
+                );
+
+                const index = Number(
+                    card.dataset.dhcpIndex
+                );
+
+                networkDhcpState.dhcp.splice(
+                    index,
+                    1
+                );
+
+                renderNetworkDhcpConfig();
+            });
+        });
+}
+
+
+function readNetworkDhcpForm() {
+    if (!networkDhcpState) {
+        throw new Error(
+            "Конфигурация сети ещё не загружена"
+        );
+    }
+
+    const interfaces = Array.from(
+        document.querySelectorAll(
+            ".network-card"
+        )
+    ).map(card => {
+        const original =
+            networkDhcpState.network.interfaces[
+                Number(card.dataset.networkIndex)
+            ];
+
+        const roleElement = card.querySelector(
+            ".network-role"
+        );
+
+        const method = card.querySelector(
+            ".network-ipv4-method"
+        ).value;
+
+        const address = card.querySelector(
+            ".network-ipv4-address"
+        ).value.trim();
+
+        const routingRaw = card.querySelector(
+            ".network-routing-table"
+        ).value.trim();
+
+        return {
+            name: original.name,
+
+            // Disabled role controls retain their original value.
+            role: roleElement.disabled
+                ? original.role
+                : roleElement.value,
+
+            ipv4_method: method,
+
+            ipv4_address:
+                method === "static"
+                    ? address
+                    : null,
+
+            routing_table:
+                routingRaw === ""
+                    ? null
+                    : Number(routingRaw),
+        };
+    });
+
+    const dhcp = Array.from(
+        document.querySelectorAll(
+            ".dhcp-card"
+        )
+    ).map(card => {
+        const dns = card.querySelector(
+            ".dhcp-dns"
+        ).value
+            .split(",")
+            .map(value => value.trim())
+            .filter(Boolean);
+
+        return {
+            enabled: card.querySelector(
+                ".dhcp-enabled"
+            ).checked,
+
+            interface: card.querySelector(
+                ".dhcp-interface"
+            ).value.trim(),
+
+            network: card.querySelector(
+                ".dhcp-network"
+            ).value.trim(),
+
+            range_start: card.querySelector(
+                ".dhcp-range-start"
+            ).value.trim(),
+
+            range_end: card.querySelector(
+                ".dhcp-range-end"
+            ).value.trim(),
+
+            gateway: card.querySelector(
+                ".dhcp-gateway"
+            ).value.trim(),
+
+            dns_servers: dns,
+
+            lease_time: card.querySelector(
+                ".dhcp-lease-time"
+            ).value.trim(),
+        };
+    });
+
+    return {
+        network: {
+            interfaces,
+            routing_policy: [
+                ...(networkDhcpState.network.routing_policy || [])
+            ],
+        },
+        dhcp,
+    };
+}
+
+
+async function networkApiRequest(
+    path,
+    options = {}
+) {
+    const response = await fetch(
+        path,
+        {
+            ...options,
+            headers: {
+                "Content-Type": "application/json",
+                ...(options.headers || {}),
+            },
+        }
+    );
+
+    let body = null;
+
+    try {
+        body = await response.json();
+    } catch (_) {
+        body = null;
+    }
+
+    if (!response.ok) {
+        let detail =
+            body?.detail ||
+            `HTTP ${response.status}`;
+
+        if (Array.isArray(detail)) {
+            detail = detail
+                .map(item =>
+                    item.msg ||
+                    JSON.stringify(item)
+                )
+                .join("; ");
+        }
+
+        throw new Error(detail);
+    }
+
+    return body;
+}
+
+
+async function loadNetworkDhcpConfig() {
+    networkConfigMessage(
+        "Загрузка конфигурации...",
+        "info"
+    );
+
+    try {
+        const data = await networkApiRequest(
+            "/api/v1/network/config"
+        );
+
+        networkDhcpState =
+            structuredClone(data);
+
+        renderNetworkDhcpConfig();
+
+        networkConfigMessage(
+            "Конфигурация загружена.",
+            "success"
+        );
+
+    } catch (error) {
+        networkConfigMessage(
+            `Ошибка загрузки: ${error.message}`,
+            "error"
+        );
+    }
+}
+
+
+async function validateNetworkDhcpConfig() {
+    try {
+        const payload = readNetworkDhcpForm();
+
+        networkConfigMessage(
+            "Проверка конфигурации...",
+            "info"
+        );
+
+        await networkApiRequest(
+            "/api/v1/network/config/validate",
+            {
+                method: "POST",
+                body: JSON.stringify(payload),
+            }
+        );
+
+        networkConfigMessage(
+            "✓ Конфигурация корректна. Изменения НЕ применялись.",
+            "success"
+        );
+
+    } catch (error) {
+        networkConfigMessage(
+            `Ошибка проверки: ${error.message}`,
+            "error"
+        );
+    }
+}
+
+
+async function applyNetworkDhcpConfig() {
+    let payload;
+
+    try {
+        payload = readNetworkDhcpForm();
+    } catch (error) {
+        networkConfigMessage(
+            error.message,
+            "error"
+        );
+        return;
+    }
+
+    const mgmt = payload.network.interfaces.find(
+        iface => iface.role === "mgmt"
+    );
+
+    const warning =
+        "Применить сетевую конфигурацию?\n\n" +
+        "MGMT: " +
+        (
+            mgmt
+                ? `${mgmt.name} / ${
+                    mgmt.ipv4_address ||
+                    mgmt.ipv4_method
+                }`
+                : "не найден"
+        ) +
+        "\n\nИзменение MGMT может разорвать доступ к Web UI.";
+
+    if (!window.confirm(warning)) {
+        return;
+    }
+
+    networkConfigMessage(
+        "Применение Network + DHCP...",
+        "info"
+    );
+
+    try {
+        const result = await networkApiRequest(
+            "/api/v1/network/config",
+            {
+                method: "PUT",
+                body: JSON.stringify(payload),
+            }
+        );
+
+        networkConfigMessage(
+            "✓ Network + DHCP успешно применены. " +
+            `Интерфейсов: ${result.interfaces}, ` +
+            `DHCP: ${result.enabled_dhcp_scopes}/${result.dhcp_scopes}.`,
+            "success"
+        );
+
+        await loadNetworkDhcpConfig();
+
+    } catch (error) {
+        networkConfigMessage(
+            `Ошибка применения: ${error.message}`,
+            "error"
+        );
+    }
+}
+
+
+function addDhcpScope() {
+    if (!networkDhcpState) {
+        return;
+    }
+
+    networkDhcpState.dhcp.push({
+        enabled: false,
+        interface: "",
+        network: "192.168.60.0/24",
+        range_start: "192.168.60.100",
+        range_end: "192.168.60.200",
+        gateway: "192.168.60.1",
+        dns_servers: [],
+        lease_time: "1h",
+    });
+
+    renderNetworkDhcpConfig();
+}
+
+
+function initializeNetworkDhcpEditor() {
+    const root = document.getElementById(
+        "network-config-editor"
+    );
+
+    if (!root) {
+        return;
+    }
+
+    document
+        .getElementById("network-config-reload")
+        ?.addEventListener(
+            "click",
+            loadNetworkDhcpConfig
+        );
+
+    document
+        .getElementById("network-config-validate")
+        ?.addEventListener(
+            "click",
+            validateNetworkDhcpConfig
+        );
+
+    document
+        .getElementById("network-config-apply")
+        ?.addEventListener(
+            "click",
+            applyNetworkDhcpConfig
+        );
+
+    document
+        .getElementById("dhcp-add-scope")
+        ?.addEventListener(
+            "click",
+            addDhcpScope
+        );
+
+    loadNetworkDhcpConfig();
+}
+
+
+if (document.readyState === "loading") {
+    document.addEventListener(
+        "DOMContentLoaded",
+        initializeNetworkDhcpEditor
+    );
+} else {
+    initializeNetworkDhcpEditor();
+}
