@@ -645,3 +645,125 @@ main{margin-left:230px;max-width:1560px;padding:36px 44px}header{display:flex;ju
 }
 
 /* SECBOX VPN CONFIGURATION CSS END */
+
+
+/* SECBOX L2 VPN UI START */
+
+.vpn-config-section-heading {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 18px;
+  margin: 24px 0 12px;
+}
+
+.vpn-config-section-heading h3 {
+  margin: 0 0 5px;
+}
+
+.vpn-config-section-heading p {
+  margin: 0;
+  opacity: 0.72;
+}
+
+.vpn-config-type {
+  margin-bottom: 5px;
+  font-size: 0.75rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  opacity: 0.65;
+}
+
+.vpn-config-divider {
+  height: 1px;
+  margin: 28px 0 8px;
+  background: rgba(148, 163, 184, 0.22);
+}
+
+.vpn-config-l2 {
+  border-color: rgba(59, 130, 246, 0.34);
+}
+
+.vpn-config-group {
+  margin-top: 20px;
+}
+
+.vpn-config-group h4 {
+  margin: 0 0 10px;
+  font-size: 0.92rem;
+}
+
+.vpn-config-field small {
+  line-height: 1.35;
+  opacity: 0.60;
+}
+
+.vpn-config-mtu-badge {
+  padding: 6px 9px;
+  border: 1px solid rgba(34, 197, 94, 0.28);
+  border-radius: 999px;
+  background: rgba(34, 197, 94, 0.10);
+  font-size: 0.78rem;
+  white-space: nowrap;
+}
+
+.vpn-config-warning {
+  margin-top: 18px;
+  padding: 12px 14px;
+  border: 1px solid rgba(245, 158, 11, 0.28);
+  border-radius: 10px;
+  background: rgba(245, 158, 11, 0.08);
+  line-height: 1.5;
+}
+
+.vpn-config-security-note {
+  max-width: 480px;
+  font-size: 0.82rem;
+  opacity: 0.68;
+}
+
+@media (max-width: 720px) {
+  .vpn-config-section-heading {
+    flex-direction: column;
+  }
+
+  .vpn-config-mtu-badge {
+    white-space: normal;
+  }
+}
+
+/* SECBOX L2 VPN UI END */
+
+/* SECBOX VPN FEEDBACK START */
+
+#vpn-config-message {
+  margin: 22px 0 10px;
+  padding: 11px 14px;
+  border: 1px solid rgba(148, 163, 184, 0.24);
+  border-radius: 9px;
+  line-height: 1.45;
+}
+
+.vpn-config-message-info {
+  background: rgba(59, 130, 246, 0.08);
+  border-color: rgba(59, 130, 246, 0.28) !important;
+}
+
+.vpn-config-message-success {
+  background: rgba(34, 197, 94, 0.10);
+  border-color: rgba(34, 197, 94, 0.38) !important;
+}
+
+.vpn-config-message-error {
+  background: rgba(239, 68, 68, 0.10);
+  border-color: rgba(239, 68, 68, 0.38) !important;
+}
+
+#vpn-config-validate:disabled,
+#vpn-config-apply:disabled {
+  opacity: 0.55;
+  cursor: wait;
+}
+
+/* SECBOX VPN FEEDBACK END */
