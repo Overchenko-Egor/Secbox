@@ -132,3 +132,161 @@ def test_render_dnsmasq(tmp_path: Path) -> None:
     assert (
         "dhcp-option=interface:ens36,3,192.168.50.1"
     ) in content
+
+
+def test_dhcp_preflight_allows_enabled_l2_vpn_bridge() -> None:
+    from secbox.modules.vpn.models import VpnConfig
+
+    vpn = VpnConfig.model_validate(
+        {
+            "enabled": True,
+            "l2_tunnels": [
+                {
+                    "name": "site-l2",
+                    "enabled": True,
+                    "transport": {
+                        "interface": "wg2",
+                        "address": "10.202.0.2/30",
+                        "private_key_file": "/etc/secbox/vpn/wg2.key",
+                        "peer": {
+                            "public_key": "test-key",
+                            "endpoint": "192.0.2.1:51822",
+                            "allowed_ips": ["10.202.0.1/32"],
+                        },
+                    },
+                    "bridge": {
+                        "interface": "br-l2vpn",
+                        "address": "172.30.0.2/24",
+                        "ports": ["eth2"],
+                    },
+                    "encapsulation": {
+                        "interface": "gt-l2vpn",
+                        "local": "10.202.0.2",
+                        "remote": "10.202.0.1",
+                        "mtu": 1376,
+                    },
+                }
+            ],
+        }
+    )
+
+    dhcp = DhcpServerConfig(
+        interface="br-l2vpn",
+        network="172.30.0.0/24",
+        range_start="172.30.0.100",
+        range_end="172.30.0.200",
+        gateway="172.30.0.2",
+        dns_servers=["172.30.0.2"],
+    )
+
+    validate_dhcp_preflight(
+        [dhcp],
+        NetworkConfig(),
+        vpn,
+    )
+
+
+def test_dhcp_preflight_rejects_wrong_l2_vpn_bridge_network() -> None:
+    from secbox.modules.vpn.models import VpnConfig
+
+    vpn = VpnConfig.model_validate(
+        {
+            "enabled": True,
+            "l2_tunnels": [
+                {
+                    "name": "site-l2",
+                    "transport": {
+                        "interface": "wg2",
+                        "address": "10.202.0.2/30",
+                        "private_key_file": "/etc/secbox/vpn/wg2.key",
+                        "peer": {
+                            "public_key": "test-key",
+                            "endpoint": "192.0.2.1:51822",
+                            "allowed_ips": ["10.202.0.1/32"],
+                        },
+                    },
+                    "bridge": {
+                        "interface": "br-l2vpn",
+                        "address": "172.30.0.2/24",
+                    },
+                    "encapsulation": {
+                        "interface": "gt-l2vpn",
+                        "local": "10.202.0.2",
+                        "remote": "10.202.0.1",
+                        "mtu": 1376,
+                    },
+                }
+            ],
+        }
+    )
+
+    dhcp = DhcpServerConfig(
+        interface="br-l2vpn",
+        network="172.31.50.0/24",
+        range_start="172.31.50.100",
+        range_end="172.31.50.200",
+        gateway="172.31.50.1",
+    )
+
+    with pytest.raises(
+        DhcpPreflightError,
+        match="does not match L2 VPN bridge network",
+    ):
+        validate_dhcp_preflight(
+            [dhcp],
+            NetworkConfig(),
+            vpn,
+        )
+
+
+def test_dhcp_preflight_rejects_l2_bridge_without_address() -> None:
+    from secbox.modules.vpn.models import VpnConfig
+
+    vpn = VpnConfig.model_validate(
+        {
+            "enabled": True,
+            "l2_tunnels": [
+                {
+                    "name": "site-l2",
+                    "transport": {
+                        "interface": "wg2",
+                        "address": "10.202.0.2/30",
+                        "private_key_file": "/etc/secbox/vpn/wg2.key",
+                        "peer": {
+                            "public_key": "test-key",
+                            "endpoint": "192.0.2.1:51822",
+                            "allowed_ips": ["10.202.0.1/32"],
+                        },
+                    },
+                    "bridge": {
+                        "interface": "br-l2vpn",
+                        "address": None,
+                    },
+                    "encapsulation": {
+                        "interface": "gt-l2vpn",
+                        "local": "10.202.0.2",
+                        "remote": "10.202.0.1",
+                        "mtu": 1376,
+                    },
+                }
+            ],
+        }
+    )
+
+    dhcp = DhcpServerConfig(
+        interface="br-l2vpn",
+        network="172.30.0.0/24",
+        range_start="172.30.0.100",
+        range_end="172.30.0.200",
+        gateway="172.30.0.2",
+    )
+
+    with pytest.raises(
+        DhcpPreflightError,
+        match="has no IPv4 address",
+    ):
+        validate_dhcp_preflight(
+            [dhcp],
+            NetworkConfig(),
+            vpn,
+        )

@@ -653,6 +653,7 @@ def dhcp_render(
         validate_dhcp_preflight(
             config.dhcp,
             config.network,
+            config.vpn,
         )
 
         validate_content_filter_config(config)
@@ -690,6 +691,7 @@ def dhcp_apply() -> None:
         validate_dhcp_preflight(
             config.dhcp,
             config.network,
+            config.vpn,
         )
 
         validate_content_filter_config(config)
