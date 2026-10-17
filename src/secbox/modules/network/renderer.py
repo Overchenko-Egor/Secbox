@@ -66,6 +66,18 @@ def _render_interface(
 ) -> str:
     """Render one interface into systemd-networkd syntax."""
 
+    if interface.role == "l2":
+        return "\n".join(
+            [
+                "[Match]",
+                f"Name={interface.name}",
+                "",
+                "[Link]",
+                "Unmanaged=yes",
+                "",
+            ]
+        )
+
     lines = [
         "[Match]",
         f"Name={interface.name}",

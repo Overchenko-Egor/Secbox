@@ -73,6 +73,9 @@ def apply_networkd_config(
     try:
         run_command(["networkctl", "reload"])
         for interface in config.interfaces:
+            if interface.role == "l2":
+                continue
+
             run_command(
                 [
                     "networkctl",
@@ -93,6 +96,9 @@ def apply_networkd_config(
             run_command(["networkctl", "reload"])
 
             for interface in config.interfaces:
+                if interface.role == "l2":
+                    continue
+
                 run_command(
                     [
                         "networkctl",

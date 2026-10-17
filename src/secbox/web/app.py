@@ -17,6 +17,7 @@ from secbox.modules.network.validator import validate_management_interface
 from secbox.modules.network.validator import validate_network_preflight
 from secbox.modules.dhcp.validator import validate_dhcp_preflight
 from secbox.modules.content_filter.validator import validate_content_filter_config
+from secbox.modules.content_filter.models import ContentFilterConfig
 from secbox.modules.vpn.validator import validate_l2_access_ports
 from secbox.core.config_store import ConfigNotFoundError, ConfigStore, ConfigStoreError, ConfigValidationError
 from secbox.core.models import SecBoxConfig
@@ -24,7 +25,11 @@ from secbox.core.version import __version__
 from secbox.modules.dhcp.renderer import DhcpRenderError
 from secbox.modules.dhcp.validator import DhcpPreflightError
 from secbox.modules.firewall.renderer import FirewallRenderError
-from secbox.modules.firewall.validator import FirewallPreflightError
+from secbox.modules.firewall.models import FirewallConfig
+from secbox.modules.firewall.validator import (
+    FirewallPreflightError,
+    validate_firewall_preflight,
+)
 from secbox.modules.network.discovery import NetworkDiscoveryError, discover_interfaces
 from secbox.modules.network.renderer import NetworkRenderError
 from secbox.modules.network.routes import NetworkRoute, RouteDiscoveryError, discover_ipv4_routes
@@ -43,6 +48,7 @@ from secbox.modules.vpn.runtime import (
     VpnRuntimeStore,
     VpnSwitchEvent,
 )
+from secbox.web.dashboard import DashboardResponse, build_dashboard
 from secbox.web.monitoring import ServiceStatus, SystemStatus, service_statuses, system_status
 from secbox.web.preview import ConfigPreview, preview_config
 from secbox.web.actions import (
@@ -53,6 +59,12 @@ from secbox.web.actions import (
     get_vpn_via_helper,
     apply_network_dhcp_via_helper,
     get_network_dhcp_via_helper,
+    get_dashboard_context_via_helper,
+    get_content_filter_via_helper,
+    apply_content_filter_via_helper,
+    get_firewall_via_helper,
+    apply_firewall_via_helper,
+    get_firewall_runtime_via_helper,
 )
 from secbox.web.vpn_config import (
     VpnConfigPreviewRequest,
@@ -160,7 +172,33 @@ def create_app(settings: WebSettings | None = None) -> FastAPI:
         """Process liveness only, not firewall or IDS readiness."""
         return {"status": "ok"}
 
+    @router.get("/monitoring/network", include_in_schema=False)
+    @router.get("/monitoring/vpn", include_in_schema=False)
+    @router.get("/monitoring/firewall", include_in_schema=False)
+    @router.get("/monitoring/ids", include_in_schema=False)
+    @router.get("/monitoring/blackhole", include_in_schema=False)
+    @router.get("/monitoring/content-filter", include_in_schema=False)
+    @router.get("/monitoring/services", include_in_schema=False)
+    @router.get("/monitoring/system", include_in_schema=False)
+    @router.get("/manage/network/interfaces", include_in_schema=False)
+    @router.get("/manage/network/dhcp", include_in_schema=False)
+    @router.get("/manage/vpn/l3", include_in_schema=False)
+    @router.get("/manage/vpn/l2", include_in_schema=False)
+    @router.get("/manage/firewall", include_in_schema=False)
+    @router.get("/manage/ids", include_in_schema=False)
+    @router.get("/manage/blackhole", include_in_schema=False)
+    @router.get("/manage/content-filter", include_in_schema=False)
+    @router.get("/manage/services", include_in_schema=False)
+    @router.get("/manage/system", include_in_schema=False)
     @router.get("/", include_in_schema=False)
+    @router.get("/network", include_in_schema=False)
+    @router.get("/dhcp", include_in_schema=False)
+    @router.get("/vpn", include_in_schema=False)
+    @router.get("/firewall", include_in_schema=False)
+    @router.get("/ids", include_in_schema=False)
+    @router.get("/blackhole", include_in_schema=False)
+    @router.get("/content-filter", include_in_schema=False)
+    @router.get("/system", include_in_schema=False)
     def dashboard() -> FileResponse:
         return FileResponse(STATIC_ROOT / "index.html")
 
@@ -171,6 +209,341 @@ def create_app(settings: WebSettings | None = None) -> FastAPI:
     @router.get("/assets/style.css", include_in_schema=False)
     def stylesheet() -> FileResponse:
         return FileResponse(STATIC_ROOT / "style.css", media_type="text/css")
+
+
+    @router.get(
+        "/api/v1/dashboard",
+        tags=["monitoring"],
+        response_model=DashboardResponse,
+    )
+    def dashboard_status() -> DashboardResponse:
+        """Return aggregated read-only operational status."""
+
+        try:
+            context = get_dashboard_context_via_helper()
+        except WebActionError as error:
+            logger.warning(
+                "Dashboard privileged context unavailable: %s",
+                error,
+            )
+            return build_dashboard()
+
+        return build_dashboard(
+            config=context.config,
+            l2_handshakes=context.l2_handshakes,
+            doh_feed=context.doh_feed,
+        )
+
+    @router.get(
+        "/api/v1/content-filter/config",
+        tags=["content-filter"],
+    )
+    def get_content_filter_config() -> dict[str, object]:
+        try:
+            config = get_content_filter_via_helper()
+        except WebActionError as error:
+            raise HTTPException(
+                503,
+                str(error),
+            ) from error
+
+        return {
+            "content_filter": config.model_dump(
+                mode="json"
+            )
+        }
+
+
+    @router.post(
+        "/api/v1/content-filter/config/validate",
+        tags=["content-filter"],
+    )
+    def validate_content_filter_web(
+        content_filter: ContentFilterConfig,
+    ) -> dict[str, object]:
+        try:
+            context = get_dashboard_context_via_helper()
+
+            candidate = context.config.model_copy(
+                update={
+                    "content_filter": content_filter,
+                }
+            )
+
+            candidate = SecBoxConfig.model_validate(
+                candidate.model_dump(
+                    mode="json"
+                )
+            )
+
+            validate_content_filter_config(
+                candidate
+            )
+
+        except WebActionError as error:
+            raise HTTPException(
+                503,
+                str(error),
+            ) from error
+
+        except Exception as error:
+            raise HTTPException(
+                422,
+                str(error),
+            ) from error
+
+        return {
+            "valid": True,
+        }
+
+
+    @router.post(
+        "/api/v1/content-filter/config/apply",
+        tags=["content-filter"],
+    )
+    def apply_content_filter_web(
+        content_filter: ContentFilterConfig,
+    ) -> dict[str, object]:
+        try:
+            result = apply_content_filter_via_helper(
+                content_filter
+            )
+
+        except WebActionBusyError as error:
+            raise HTTPException(
+                409,
+                str(error),
+            ) from error
+
+        except WebActionTimeoutError as error:
+            raise HTTPException(
+                504,
+                str(error),
+            ) from error
+
+        except WebActionError as error:
+            raise HTTPException(
+                422,
+                str(error),
+            ) from error
+
+        return {
+            "enabled": result.enabled,
+            "blocked_domains": (
+                result.blocked_domains
+            ),
+            "doh_enabled": result.doh_enabled,
+            "managed_feed_enabled": (
+                result.managed_feed_enabled
+            ),
+        }
+
+
+    def _validate_firewall_candidate(
+        firewall: FirewallConfig,
+    ) -> None:
+        if not firewall.enabled:
+            raise HTTPException(
+                422,
+                "Disabling Firewall through Web UI is not supported",
+            )
+
+        if 8443 not in firewall.management_tcp_ports:
+            raise HTTPException(
+                422,
+                "Management TCP port 8443 must remain allowed",
+            )
+
+        try:
+            context = (
+                get_dashboard_context_via_helper()
+            )
+
+            candidate = context.config.model_copy(
+                update={
+                    "firewall": firewall,
+                }
+            )
+
+            candidate = SecBoxConfig.model_validate(
+                candidate.model_dump(
+                    mode="json"
+                )
+            )
+
+            validate_firewall_preflight(
+                candidate.firewall,
+                candidate.network,
+            )
+
+            validate_content_filter_config(
+                candidate
+            )
+
+        except HTTPException:
+            raise
+
+        except WebActionError as error:
+            raise HTTPException(
+                503,
+                str(error),
+            ) from error
+
+        except Exception as error:
+            raise HTTPException(
+                422,
+                str(error),
+            ) from error
+
+
+    @router.get(
+        "/api/v1/firewall/config",
+        tags=["firewall"],
+    )
+    def get_firewall_web_config(
+    ) -> dict[str, object]:
+        try:
+            firewall = (
+                get_firewall_via_helper()
+            )
+
+            context = (
+                get_dashboard_context_via_helper()
+            )
+
+        except WebActionTimeoutError as error:
+            raise HTTPException(
+                504,
+                "Firewall configuration read timed out",
+            ) from error
+
+        except WebActionError as error:
+            raise HTTPException(
+                503,
+                str(error),
+            ) from error
+
+        interfaces = [
+            {
+                "name": interface.name,
+                "role": interface.role,
+                "enabled": (
+                    interface.ipv4_method != "disabled"
+                ),
+            }
+            for interface
+            in context.config.network.interfaces
+            if interface.role
+            in {"wan", "lan", "mgmt"}
+        ]
+
+        return {
+            "firewall": firewall.model_dump(
+                mode="json"
+            ),
+            "interfaces": interfaces,
+        }
+
+
+    @router.get(
+        "/api/v1/firewall/runtime",
+        tags=["firewall"],
+    )
+    def get_firewall_web_runtime(
+    ) -> dict[str, object]:
+        try:
+            runtime = (
+                get_firewall_runtime_via_helper()
+            )
+
+        except WebActionTimeoutError as error:
+            raise HTTPException(
+                504,
+                "Firewall runtime read timed out",
+            ) from error
+
+        except WebActionError as error:
+            raise HTTPException(
+                503,
+                str(error),
+            ) from error
+
+        return {
+            "runtime": runtime,
+        }
+
+
+    @router.post(
+        "/api/v1/firewall/config/validate",
+        tags=["firewall"],
+    )
+    def validate_firewall_web_config(
+        firewall: FirewallConfig,
+    ) -> dict[str, bool]:
+        _validate_firewall_candidate(
+            firewall
+        )
+
+        return {
+            "valid": True,
+        }
+
+
+    @router.post(
+        "/api/v1/firewall/config/apply",
+        tags=["firewall"],
+    )
+    def apply_firewall_web_config(
+        firewall: FirewallConfig,
+    ) -> dict[str, object]:
+        _validate_firewall_candidate(
+            firewall
+        )
+
+        try:
+            result = (
+                apply_firewall_via_helper(
+                    firewall
+                )
+            )
+
+        except WebActionBusyError as error:
+            raise HTTPException(
+                409,
+                str(error),
+            ) from error
+
+        except WebActionTimeoutError as error:
+            raise HTTPException(
+                504,
+                str(error),
+            ) from error
+
+        except WebActionError as error:
+            raise HTTPException(
+                422,
+                str(error),
+            ) from error
+
+        return {
+            "enabled": result.enabled,
+            "wan_interface": (
+                result.wan_interface
+            ),
+            "lan_interface": (
+                result.lan_interface
+            ),
+            "management_interface": (
+                result.management_interface
+            ),
+            "nat_enabled": (
+                result.nat_enabled
+            ),
+            "dynamic_blacklist_enabled": (
+                result.dynamic_blacklist_enabled
+            ),
+        }
+
 
     @router.get("/api/v1/system", tags=["monitoring"])
     def system() -> SystemStatus:
@@ -379,6 +752,105 @@ def create_app(settings: WebSettings | None = None) -> FastAPI:
                 503,
                 "VPN event history is not readable",
             ) from error
+
+
+    @router.get(
+        "/api/v1/services/managed",
+        tags=["services"],
+    )
+    def managed_services_get() -> dict[str, object]:
+        """Return strict allowlist of manageable services."""
+
+        from secbox.web.actions import (
+            WebActionError,
+            WebActionTimeoutError,
+            get_managed_services_via_helper,
+        )
+
+        try:
+            services = (
+                get_managed_services_via_helper()
+            )
+
+        except WebActionTimeoutError as error:
+            raise HTTPException(
+                504,
+                "Service status helper timed out",
+            ) from error
+
+        except WebActionError as error:
+            raise HTTPException(
+                503,
+                str(error),
+            ) from error
+
+        return {
+            "services": services,
+        }
+
+
+    @router.post(
+        "/api/v1/services/action",
+        tags=["services"],
+    )
+    def managed_service_action(
+        payload: dict[str, str],
+    ) -> dict[str, object]:
+        """Perform one strictly allowlisted service operation."""
+
+        from secbox.web.actions import (
+            WebActionError,
+            WebActionTimeoutError,
+            service_action_via_helper,
+        )
+
+        if set(payload) != {
+            "unit",
+            "operation",
+        }:
+            raise HTTPException(
+                422,
+                "Expected unit and operation",
+            )
+
+        unit = payload.get(
+            "unit",
+            "",
+        ).strip()
+
+        operation = payload.get(
+            "operation",
+            "",
+        ).strip()
+
+        if not unit or not operation:
+            raise HTTPException(
+                422,
+                "unit and operation are required",
+            )
+
+        try:
+            service = service_action_via_helper(
+                unit,
+                operation,
+            )
+
+        except WebActionTimeoutError as error:
+            raise HTTPException(
+                504,
+                "Service action timed out",
+            ) from error
+
+        except WebActionError as error:
+            raise HTTPException(
+                422,
+                str(error),
+            ) from error
+
+        return {
+            "ok": True,
+            "service": service,
+        }
 
 
     @router.get(

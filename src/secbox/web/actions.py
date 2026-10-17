@@ -5,9 +5,14 @@ import socket
 from dataclasses import dataclass
 from pathlib import Path
 
+from secbox.core.models import SecBoxConfig
 from secbox.modules.vpn.models import VpnConfig
 from secbox.modules.network.models import NetworkConfig
 from secbox.modules.dhcp.models import DhcpServerConfig
+from secbox.modules.content_filter.models import (
+    ContentFilterConfig,
+)
+from secbox.modules.firewall.models import FirewallConfig
 
 
 ACTION_SOCKET = Path(
@@ -364,3 +369,488 @@ def apply_network_dhcp_via_helper(
         raise WebActionError(
             "privileged helper returned invalid Network/DHCP result"
         ) from error
+
+@dataclass(frozen=True)
+class WebDashboardContext:
+    config: SecBoxConfig
+    l2_handshakes: dict[str, dict[str, object]]
+    doh_feed: dict[str, object]
+
+
+def get_dashboard_context_via_helper() -> WebDashboardContext:
+    """Read sanitized Dashboard context through the privileged worker."""
+
+    response = _exchange(
+        {
+            "action": "get-dashboard-context",
+        }
+    )
+
+    if response.get("ok") is not True:
+        raise WebActionError(
+            "privileged Dashboard context read failed"
+        )
+
+    result = response.get("result")
+
+    if not isinstance(result, dict):
+        raise WebActionError(
+            "privileged Dashboard context is invalid"
+        )
+
+    raw_config = result.get("config")
+    raw_l2 = result.get("l2_handshakes")
+    raw_doh = result.get("doh_feed")
+
+    if not isinstance(raw_l2, dict):
+        raise WebActionError(
+            "privileged L2 VPN health data is invalid"
+        )
+
+    if not isinstance(raw_doh, dict):
+        raise WebActionError(
+            "privileged DoH health data is invalid"
+        )
+
+    try:
+        config = SecBoxConfig.model_validate(
+            raw_config
+        )
+    except Exception as error:
+        raise WebActionError(
+            "privileged Dashboard configuration is invalid"
+        ) from error
+
+    l2_handshakes: dict[str, dict[str, object]] = {}
+
+    for interface, value in raw_l2.items():
+        if not isinstance(interface, str):
+            raise WebActionError(
+                "privileged L2 VPN health data is invalid"
+            )
+
+        if not isinstance(value, dict):
+            raise WebActionError(
+                "privileged L2 VPN health data is invalid"
+            )
+
+        l2_handshakes[interface] = value
+
+    return WebDashboardContext(
+        config=config,
+        l2_handshakes=l2_handshakes,
+        doh_feed=raw_doh,
+    )
+
+
+
+@dataclass(frozen=True)
+class WebContentFilterApplyResult:
+    enabled: bool
+    blocked_domains: int
+    doh_enabled: bool
+    managed_feed_enabled: bool
+
+
+def get_content_filter_via_helper() -> ContentFilterConfig:
+    response = _exchange(
+        {
+            "action": "get-content-filter",
+        }
+    )
+
+    if response.get("ok") is not True:
+        raise WebActionError(
+            "privileged Content Filter read failed"
+        )
+
+    result = response.get("result")
+
+    if not isinstance(result, dict):
+        raise WebActionError(
+            "privileged Content Filter result is invalid"
+        )
+
+    raw = result.get("content_filter")
+
+    if raw is None:
+        raise WebActionError(
+            "Content Filter configuration is missing"
+        )
+
+    try:
+        return ContentFilterConfig.model_validate(raw)
+
+    except Exception as error:
+        raise WebActionError(
+            "privileged Content Filter configuration is invalid"
+        ) from error
+
+
+def apply_content_filter_via_helper(
+    content_filter: ContentFilterConfig,
+) -> WebContentFilterApplyResult:
+    response = _exchange(
+        {
+            "action": "apply-content-filter",
+            "content_filter": content_filter.model_dump(
+                mode="json"
+            ),
+        }
+    )
+
+    error = response.get("error")
+
+    if error == "busy":
+        raise WebActionBusyError(
+            "another configuration action is running"
+        )
+
+    if response.get("ok") is not True:
+        detail = response.get("detail")
+
+        if isinstance(detail, str) and detail.strip():
+            raise WebActionError(detail.strip())
+
+        raise WebActionError(
+            "privileged Content Filter apply failed"
+        )
+
+    result = response.get("result")
+
+    if not isinstance(result, dict):
+        raise WebActionError(
+            "privileged Content Filter result is invalid"
+        )
+
+    try:
+        return WebContentFilterApplyResult(
+            enabled=bool(result["enabled"]),
+            blocked_domains=int(
+                result["blocked_domains"]
+            ),
+            doh_enabled=bool(
+                result["doh_enabled"]
+            ),
+            managed_feed_enabled=bool(
+                result["managed_feed_enabled"]
+            ),
+        )
+
+    except (
+        KeyError,
+        TypeError,
+        ValueError,
+    ) as error:
+        raise WebActionError(
+            "privileged Content Filter result is invalid"
+        ) from error
+
+
+@dataclass(frozen=True)
+class WebFirewallApplyResult:
+    enabled: bool
+    wan_interface: str
+    lan_interface: str
+    management_interface: str
+    nat_enabled: bool
+    dynamic_blacklist_enabled: bool
+
+
+def get_firewall_via_helper() -> FirewallConfig:
+    response = _exchange(
+        {
+            "action": "get-firewall",
+        }
+    )
+
+    if response.get("ok") is not True:
+        raise WebActionError(
+            "privileged Firewall read failed"
+        )
+
+    result = response.get("result")
+
+    if not isinstance(result, dict):
+        raise WebActionError(
+            "privileged Firewall result is invalid"
+        )
+
+    raw = result.get("firewall")
+
+    if raw is None:
+        raise WebActionError(
+            "Firewall configuration is missing"
+        )
+
+    try:
+        return FirewallConfig.model_validate(raw)
+
+    except Exception as error:
+        raise WebActionError(
+            "privileged Firewall configuration is invalid"
+        ) from error
+
+
+def apply_firewall_via_helper(
+    firewall: FirewallConfig,
+) -> WebFirewallApplyResult:
+    response = _exchange(
+        {
+            "action": "apply-firewall",
+            "firewall": firewall.model_dump(
+                mode="json"
+            ),
+        }
+    )
+
+    error = response.get("error")
+
+    if error == "busy":
+        raise WebActionBusyError(
+            "another configuration action is running"
+        )
+
+    if response.get("ok") is not True:
+        detail = response.get("detail")
+
+        if isinstance(detail, str) and detail.strip():
+            raise WebActionError(detail.strip())
+
+        raise WebActionError(
+            "privileged Firewall apply failed"
+        )
+
+    result = response.get("result")
+
+    if not isinstance(result, dict):
+        raise WebActionError(
+            "privileged Firewall result is invalid"
+        )
+
+    try:
+        return WebFirewallApplyResult(
+            enabled=bool(result["enabled"]),
+            wan_interface=str(result["wan_interface"]),
+            lan_interface=str(result["lan_interface"]),
+            management_interface=str(
+                result["management_interface"]
+            ),
+            nat_enabled=bool(result["nat_enabled"]),
+            dynamic_blacklist_enabled=bool(
+                result["dynamic_blacklist_enabled"]
+            ),
+        )
+
+    except (
+        KeyError,
+        TypeError,
+        ValueError,
+    ) as error:
+        raise WebActionError(
+            "privileged Firewall result is invalid"
+        ) from error
+
+
+def get_managed_services_via_helper(
+) -> list[dict[str, object]]:
+    """Read allowlisted service states through root helper."""
+
+    response = _exchange(
+        {
+            "action": "get-services",
+        }
+    )
+
+    if response.get("ok") is not True:
+        detail = response.get("detail")
+
+        raise WebActionError(
+            str(detail)
+            if detail
+            else "privileged service status read failed"
+        )
+
+    result = response.get("result")
+
+    if not isinstance(result, dict):
+        raise WebActionError(
+            "privileged service result is invalid"
+        )
+
+    services = result.get("services")
+
+    if not isinstance(services, list):
+        raise WebActionError(
+            "privileged service list is invalid"
+        )
+
+    if not all(
+        isinstance(item, dict)
+        for item in services
+    ):
+        raise WebActionError(
+            "privileged service entries are invalid"
+        )
+
+    return services
+
+
+def service_action_via_helper(
+    unit: str,
+    operation: str,
+) -> dict[str, object]:
+    """Execute one allowlisted systemd action."""
+
+    response = _exchange(
+        {
+            "action": "service-action",
+            "unit": unit,
+            "operation": operation,
+        }
+    )
+
+    if response.get("ok") is not True:
+        detail = response.get("detail")
+
+        raise WebActionError(
+            str(detail)
+            if detail
+            else "privileged service action failed"
+        )
+
+    result = response.get("result")
+
+    if not isinstance(result, dict):
+        raise WebActionError(
+            "privileged service result is invalid"
+        )
+
+    service = result.get("service")
+
+    if not isinstance(service, dict):
+        raise WebActionError(
+            "privileged service state is invalid"
+        )
+
+    return service
+
+
+def get_managed_services_via_helper(
+) -> list[dict[str, object]]:
+    """Read allowlisted service states through root helper."""
+
+    response = _exchange(
+        {
+            "action": "get-services",
+        }
+    )
+
+    if response.get("ok") is not True:
+        detail = response.get("detail")
+
+        raise WebActionError(
+            str(detail)
+            if detail
+            else "privileged service status read failed"
+        )
+
+    result = response.get("result")
+
+    if not isinstance(result, dict):
+        raise WebActionError(
+            "privileged service result is invalid"
+        )
+
+    services = result.get("services")
+
+    if not isinstance(services, list):
+        raise WebActionError(
+            "privileged service list is invalid"
+        )
+
+    if not all(
+        isinstance(item, dict)
+        for item in services
+    ):
+        raise WebActionError(
+            "privileged service entries are invalid"
+        )
+
+    return services
+
+
+def service_action_via_helper(
+    unit: str,
+    operation: str,
+) -> dict[str, object]:
+    """Execute one allowlisted systemd action."""
+
+    response = _exchange(
+        {
+            "action": "service-action",
+            "unit": unit,
+            "operation": operation,
+        }
+    )
+
+    if response.get("ok") is not True:
+        detail = response.get("detail")
+
+        raise WebActionError(
+            str(detail)
+            if detail
+            else "privileged service action failed"
+        )
+
+    result = response.get("result")
+
+    if not isinstance(result, dict):
+        raise WebActionError(
+            "privileged service result is invalid"
+        )
+
+    service = result.get("service")
+
+    if not isinstance(service, dict):
+        raise WebActionError(
+            "privileged service state is invalid"
+        )
+
+    return service
+
+
+def get_firewall_runtime_via_helper(
+) -> dict[str, object]:
+    """Read sanitized nftables runtime through privileged helper."""
+
+    response = _exchange(
+        {
+            "action": "get-firewall-runtime",
+        }
+    )
+
+    if response.get("ok") is not True:
+        detail = response.get("detail")
+
+        raise WebActionError(
+            str(detail)
+            if detail
+            else "privileged Firewall runtime read failed"
+        )
+
+    result = response.get("result")
+
+    if not isinstance(result, dict):
+        raise WebActionError(
+            "privileged Firewall runtime result is invalid"
+        )
+
+    runtime = result.get("runtime")
+
+    if not isinstance(runtime, dict):
+        raise WebActionError(
+            "privileged Firewall runtime payload is invalid"
+        )
+
+    return runtime

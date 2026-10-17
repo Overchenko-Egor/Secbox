@@ -922,3 +922,1029 @@ main{margin-left:230px;max-width:1560px;padding:36px 44px}header{display:flex;ju
         grid-template-columns: 1fr;
     }
 }
+
+
+/* ============================================================
+   SecBox multipage application shell
+   ============================================================ */
+
+[hidden] {
+  display: none !important;
+}
+
+.sidebar-nav {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.sidebar-nav a {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  min-height: 42px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  color: var(--muted);
+  transition:
+    background .15s ease,
+    color .15s ease,
+    border-color .15s ease;
+}
+
+.sidebar-nav a:hover {
+  color: var(--text);
+  background: rgba(255,255,255,.035);
+  text-decoration: none;
+}
+
+.sidebar-nav a.active {
+  color: var(--accent);
+  background: rgba(120,223,188,.08);
+  box-shadow: inset 3px 0 0 var(--accent);
+}
+
+.nav-icon {
+  width: 28px;
+  height: 28px;
+  flex: 0 0 28px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  font-size: 9px;
+  font-weight: 800;
+  letter-spacing: .04em;
+  color: inherit;
+}
+
+.sidebar-nav a.active .nav-icon {
+  border-color: #386858;
+  background: #10251f;
+}
+
+.page-breadcrumb {
+  min-height: 30px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 20px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.page-breadcrumb strong {
+  color: var(--text);
+}
+
+.page-breadcrumb small {
+  margin-left: auto;
+  color: var(--muted);
+}
+
+.breadcrumb-separator {
+  opacity: .45;
+}
+
+.secbox-placeholder {
+  min-height: 330px;
+}
+
+.placeholder-description {
+  max-width: 850px;
+  color: var(--muted);
+  margin: 0 0 24px;
+}
+
+.placeholder-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0,1fr));
+  gap: 14px;
+}
+
+.placeholder-grid article {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  min-height: 110px;
+  padding: 18px;
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+}
+
+.placeholder-grid article strong {
+  font-size: 14px;
+}
+
+.placeholder-grid article span {
+  color: var(--muted);
+  font-size: 13px;
+}
+
+/*
+ * A page now owns the available workspace.
+ * Old anchor scrolling is no longer part of navigation.
+ */
+html {
+  scroll-behavior: auto;
+}
+
+#app-main {
+  min-height: 100vh;
+}
+
+/*
+ * Footer is application-wide and remains visible below the current page.
+ */
+footer {
+  border-top: 1px solid var(--line);
+  padding-top: 18px;
+}
+
+/*
+ * Give the sidebar enough room for the expanded module list.
+ */
+aside {
+  overflow-y: auto;
+}
+
+@media (max-width: 760px) {
+  .sidebar-nav {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0,1fr));
+    margin-top: 14px;
+  }
+
+  .sidebar-nav a {
+    padding: 7px;
+    min-width: 0;
+  }
+
+  .nav-icon {
+    display: none;
+  }
+
+  .page-breadcrumb small {
+    display: none;
+  }
+
+  .placeholder-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+
+
+/* ============================================================
+   SecBox Navigation v2
+   ============================================================ */
+
+aside {
+  width: 260px;
+  padding: 26px 20px;
+}
+
+main {
+  margin-left: 260px;
+}
+
+.sidebar-nav {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  min-height: 0;
+}
+
+.nav-group {
+  display: block;
+}
+
+.nav-group-toggle,
+.nav-subgroup-toggle {
+  width: 100%;
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  box-shadow: none;
+  filter: none;
+}
+
+.nav-group-toggle:hover,
+.nav-subgroup-toggle:hover {
+  filter: none;
+  background: rgba(255,255,255,.035);
+  color: var(--text);
+}
+
+.nav-group-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 7px 9px;
+  margin-bottom: 4px;
+  border-radius: 7px;
+}
+
+.nav-group-title {
+  font-size: 10px;
+  line-height: 1;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: .13em;
+}
+
+.nav-chevron {
+  display: inline-block;
+  font-size: 14px;
+  transition: transform .15s ease;
+}
+
+.nav-group.expanded >
+.nav-group-toggle .nav-chevron,
+
+.nav-subgroup.expanded >
+.nav-subgroup-toggle .nav-chevron {
+  transform: rotate(180deg);
+}
+
+.nav-group-content {
+  display: none;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.nav-group.expanded > .nav-group-content {
+  display: flex;
+}
+
+.sidebar-nav a {
+  min-height: 38px;
+  padding: 6px 9px;
+}
+
+.nav-subgroup {
+  display: block;
+}
+
+.nav-subgroup-toggle {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-height: 38px;
+  padding: 5px 9px;
+  border-radius: 8px;
+  font-weight: 600;
+}
+
+.nav-subgroup-toggle > span:first-child {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+}
+
+.nav-subgroup-content {
+  display: none;
+  margin: 2px 0 5px 41px;
+  padding-left: 10px;
+  border-left: 1px solid var(--line);
+}
+
+.nav-subgroup.expanded >
+.nav-subgroup-content {
+  display: flex;
+  flex-direction: column;
+}
+
+.nav-subgroup-content a {
+  min-height: 31px;
+  padding: 4px 9px;
+  font-size: 12px;
+}
+
+.nav-subgroup-content a.active {
+  box-shadow: none;
+  border-left: 2px solid var(--accent);
+  border-radius: 0 7px 7px 0;
+}
+
+.aside-note {
+  padding-top: 18px;
+}
+
+@media (max-width: 760px) {
+  aside {
+    width: auto;
+  }
+
+  main {
+    margin-left: 0;
+  }
+
+  .sidebar-nav {
+    display: flex;
+    margin-top: 14px;
+  }
+
+  .nav-group-content {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .nav-group.expanded > .nav-group-content {
+    display: grid;
+  }
+
+  .nav-subgroup {
+    grid-column: span 2;
+  }
+
+  .nav-subgroup-content {
+    margin-left: 15px;
+  }
+
+  .nav-icon {
+    display: inline-flex;
+  }
+}
+
+
+/* ============================================================
+   Network management page tabs
+   ============================================================ */
+
+.page-tabs {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin: 18px 0 22px;
+    padding-bottom: 12px;
+    border-bottom: 1px solid var(--border-color, #30363d);
+}
+
+.page-tab {
+    display: inline-flex;
+    align-items: center;
+    min-height: 36px;
+    padding: 0 14px;
+    border: 1px solid var(--border-color, #30363d);
+    border-radius: 8px;
+    text-decoration: none;
+    font-size: 13px;
+    font-weight: 600;
+    opacity: 0.78;
+}
+
+.page-tab:hover {
+    opacity: 1;
+}
+
+.page-tab.active {
+    opacity: 1;
+    background: rgba(88, 166, 255, 0.12);
+    border-color: rgba(88, 166, 255, 0.45);
+}
+
+#network-interface-message,
+#dhcp-config-message {
+    margin: 12px 0;
+    padding: 10px 12px;
+    border-radius: 8px;
+}
+
+#network-interface-message.success,
+#dhcp-config-message.success {
+    background: rgba(46, 160, 67, 0.12);
+    border: 1px solid rgba(46, 160, 67, 0.4);
+}
+
+#network-interface-message.error,
+#dhcp-config-message.error {
+    background: rgba(248, 81, 73, 0.12);
+    border: 1px solid rgba(248, 81, 73, 0.4);
+}
+
+#network-interface-message.info,
+#dhcp-config-message.info {
+    background: rgba(88, 166, 255, 0.10);
+    border: 1px solid rgba(88, 166, 255, 0.35);
+}
+
+
+
+/* ==========================================================
+   VPN management tabs
+   ========================================================== */
+
+#vpn-management-tabs,
+#vpn-monitoring-tabs {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+
+    margin: 14px 0 22px;
+    padding-bottom: 14px;
+
+    border-bottom: 1px solid
+        rgba(148, 163, 184, 0.20);
+}
+
+#vpn-management-tabs .module-tab,
+#vpn-monitoring-tabs .module-tab {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+
+    min-width: 64px;
+    padding: 9px 16px;
+
+    border: 1px solid
+        rgba(148, 163, 184, 0.25);
+    border-radius: 8px;
+
+    color: #9fb3c8;
+    text-decoration: none;
+
+    background:
+        rgba(15, 23, 42, 0.20);
+
+    transition:
+        border-color 0.15s ease,
+        background 0.15s ease,
+        color 0.15s ease;
+}
+
+#vpn-management-tabs .module-tab:hover,
+#vpn-monitoring-tabs .module-tab:hover {
+    color: #ffffff;
+
+    border-color:
+        rgba(110, 231, 183, 0.55);
+}
+
+#vpn-management-tabs .module-tab.active,
+#vpn-monitoring-tabs .module-tab.active {
+    color: #ffffff;
+
+    border-color:
+        rgba(110, 231, 183, 0.75);
+
+    background:
+        rgba(110, 231, 183, 0.12);
+}
+
+/* Content Filter */
+
+.cf-page {
+  max-width: 1200px;
+}
+
+.cf-status-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 16px;
+  margin-top: 20px;
+}
+
+.cf-status-grid article,
+.cf-details > div {
+  padding: 16px;
+  border: 1px solid var(--border-color, #d9dde5);
+  border-radius: 10px;
+}
+
+.cf-status-grid span,
+.cf-details span,
+.cf-form-grid label > span {
+  display: block;
+  margin-bottom: 6px;
+  font-size: 0.85rem;
+  opacity: 0.75;
+}
+
+.cf-status-grid strong {
+  font-size: 1.2rem;
+}
+
+.cf-details {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+  margin-top: 18px;
+}
+
+.cf-form-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 16px;
+  margin-top: 18px;
+}
+
+.cf-form-grid input[type="text"],
+.cf-form-grid input[type="url"],
+.cf-form-grid input[type="number"],
+.cf-form-grid textarea {
+  box-sizing: border-box;
+  width: 100%;
+}
+
+.cf-form-grid textarea {
+  resize: vertical;
+  font-family: inherit;
+}
+
+.cf-wide {
+  grid-column: 1 / -1;
+}
+
+.cf-check {
+  display: flex !important;
+  align-items: center;
+  gap: 10px;
+}
+
+.cf-check span {
+  margin: 0 !important;
+}
+
+.cf-subtitle {
+  margin-top: 28px;
+  margin-bottom: 4px;
+}
+
+.cf-actions {
+  display: flex;
+  gap: 10px;
+  margin-top: 20px;
+}
+
+@media (max-width: 850px) {
+  .cf-status-grid,
+  .cf-details,
+  .cf-form-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .cf-wide {
+    grid-column: auto;
+  }
+}
+
+/* SECBOX L2 VPN MONITORING */
+
+.vpn-l2-monitor {
+  margin-top: 34px;
+  padding-top: 26px;
+  border-top: 1px solid var(--line);
+}
+
+.vpn-l2-heading {
+  margin-top: 0;
+}
+
+.vpn-l2-heading > div:first-child h3 {
+  margin: 0;
+}
+
+.vpn-l2-heading-actions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.vpn-l2-tunnels {
+  display: grid;
+  gap: 16px;
+  margin-top: 18px;
+}
+
+.vpn-l2-card {
+  padding: 20px;
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+}
+
+.vpn-l2-metrics {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 14px;
+  margin: 22px 0;
+}
+
+.vpn-l2-metrics div {
+  min-width: 0;
+}
+
+.vpn-l2-metrics dt {
+  color: var(--muted);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: .06em;
+}
+
+.vpn-l2-metrics dd {
+  margin: 3px 0 0;
+  overflow-wrap: anywhere;
+  font: 12px/1.5 ui-monospace, Consolas, monospace;
+}
+
+.vpn-l2-runtime-grid {
+  display: grid;
+  gap: 8px;
+  padding-top: 16px;
+  border-top: 1px solid var(--line);
+}
+
+.vpn-l2-runtime-row {
+  display: grid;
+  grid-template-columns: 100px 150px minmax(0, 1fr);
+  gap: 14px;
+  align-items: center;
+  font-size: 12px;
+}
+
+.vpn-l2-runtime-row > span:first-child {
+  color: var(--muted);
+}
+
+.vpn-l2-runtime-row strong {
+  font-family: ui-monospace, Consolas, monospace;
+}
+
+.vpn-l2-runtime-row > span:last-child {
+  overflow-wrap: anywhere;
+  font-family: ui-monospace, Consolas, monospace;
+}
+
+.vpn-l2-notes {
+  margin-top: 16px;
+}
+
+.vpn-l2-notes p {
+  margin: 6px 0 0;
+  font-size: 12px;
+}
+
+.vpn-l2-ok {
+  color: var(--accent);
+}
+
+.vpn-l2-warning {
+  color: #ffd479;
+}
+
+@media(max-width:1100px) {
+  .vpn-l2-metrics {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media(max-width:760px) {
+  .vpn-l2-metrics {
+    grid-template-columns: 1fr;
+  }
+
+  .vpn-l2-runtime-row {
+    grid-template-columns: 1fr;
+    gap: 2px;
+  }
+
+  .vpn-l2-heading-actions {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+}
+
+/* SECBOX VPN L2 MONITOR PAGE */
+
+.vpn-l2-heading-actions{
+  display:flex;
+  align-items:center;
+  gap:12px
+}
+
+.vpn-l2-tunnels{
+  display:grid;
+  gap:16px;
+  margin-top:20px
+}
+
+.vpn-l2-card{
+  background:var(--bg);
+  border:1px solid var(--line);
+  border-radius:10px;
+  padding:20px
+}
+
+.vpn-l2-metrics{
+  display:grid;
+  grid-template-columns:repeat(4,minmax(0,1fr));
+  gap:14px;
+  margin:22px 0
+}
+
+.vpn-l2-metrics div{
+  min-width:0
+}
+
+.vpn-l2-metrics dt{
+  color:var(--muted);
+  font-size:10px;
+  text-transform:uppercase;
+  letter-spacing:.06em
+}
+
+.vpn-l2-metrics dd{
+  margin:3px 0 0;
+  overflow-wrap:anywhere;
+  font:12px/1.5 ui-monospace,Consolas,monospace
+}
+
+.vpn-l2-runtime-grid{
+  display:grid;
+  gap:8px;
+  padding-top:16px;
+  border-top:1px solid var(--line)
+}
+
+.vpn-l2-runtime-row{
+  display:grid;
+  grid-template-columns:100px 150px minmax(0,1fr);
+  gap:14px;
+  align-items:center;
+  font-size:12px
+}
+
+.vpn-l2-runtime-row>span:first-child{
+  color:var(--muted)
+}
+
+.vpn-l2-runtime-row strong,
+.vpn-l2-runtime-row>span:last-child{
+  font-family:ui-monospace,Consolas,monospace
+}
+
+.vpn-l2-notes{
+  margin-top:16px
+}
+
+.vpn-l2-notes p{
+  margin:6px 0 0;
+  font-size:12px
+}
+
+.vpn-l2-ok{
+  color:var(--accent)
+}
+
+.vpn-l2-warning{
+  color:#ffd479
+}
+
+@media(max-width:1100px){
+  .vpn-l2-metrics{
+    grid-template-columns:repeat(2,minmax(0,1fr))
+  }
+}
+
+@media(max-width:760px){
+  .vpn-l2-metrics{
+    grid-template-columns:1fr
+  }
+
+  .vpn-l2-runtime-row{
+    grid-template-columns:1fr;
+    gap:2px
+  }
+
+  .vpn-l2-heading-actions{
+    align-items:flex-start;
+    flex-direction:column
+  }
+}
+
+/* ==========================================================
+   SecBox managed services
+   ========================================================== */
+
+.managed-service-list {
+  display: grid;
+  grid-template-columns:
+    repeat(2, minmax(0, 1fr));
+  gap: 14px;
+  margin-top: 20px;
+}
+
+.managed-service-card {
+  min-width: 0;
+  padding: 18px;
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+}
+
+.managed-service-top {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 16px;
+}
+
+.managed-service-top strong {
+  display: block;
+  font-size: 16px;
+}
+
+.managed-service-top code {
+  display: block;
+  margin-top: 4px;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.managed-service-metrics {
+  display: grid;
+  grid-template-columns:
+    repeat(3, minmax(0, 1fr));
+  gap: 12px;
+  margin: 18px 0 0;
+}
+
+.managed-service-metrics dt {
+  color: var(--muted);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: .06em;
+}
+
+.managed-service-metrics dd {
+  margin: 3px 0 0;
+  overflow-wrap: anywhere;
+  font: 12px ui-monospace,Consolas,monospace;
+}
+
+.managed-service-note {
+  min-height: 38px;
+  margin: 16px 0 0;
+  padding-top: 13px;
+  border-top: 1px solid var(--line);
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.managed-service-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  align-items: center;
+  margin-top: 15px;
+}
+
+.managed-service-actions button {
+  padding: 7px 12px;
+  font-size: 12px;
+}
+
+.managed-service-locked {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.vpn-status.idle {
+  color: #9fb3c8;
+  border-color: rgba(159,179,200,.4);
+}
+
+@media(max-width:1050px) {
+  .managed-service-list {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media(max-width:650px) {
+  .managed-service-metrics {
+    grid-template-columns:
+      repeat(2, minmax(0,1fr));
+  }
+}
+
+/* ==========================================================
+   SecBox Firewall
+   ========================================================== */
+
+.firewall-page {
+  min-width: 0;
+}
+
+.fw-status-grid {
+  display: grid;
+  grid-template-columns:
+    repeat(4,minmax(0,1fr));
+  gap: 14px;
+  margin: 20px 0 24px;
+}
+
+.fw-status-grid article {
+  padding: 16px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: var(--bg);
+}
+
+.fw-status-grid span {
+  display: block;
+  color: var(--muted);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: .05em;
+}
+
+.fw-status-grid strong {
+  display: block;
+  margin-top: 7px;
+  font: 14px ui-monospace,Consolas,monospace;
+}
+
+.fw-chip-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 12px;
+}
+
+.fw-chip-list code {
+  padding: 6px 10px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  background: var(--bg);
+}
+
+.fw-form-grid {
+  display: grid;
+  grid-template-columns:
+    repeat(2,minmax(0,1fr));
+  gap: 15px;
+}
+
+.fw-form-grid label {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+}
+
+.fw-form-grid label > span {
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.fw-form-grid input,
+.fw-form-grid select,
+.fw-form-grid textarea {
+  width: 100%;
+}
+
+.fw-form-grid .fw-check {
+  flex-direction: row;
+  align-items: center;
+  gap: 9px;
+}
+
+.fw-check input {
+  width: auto;
+}
+
+.fw-wide {
+  grid-column: 1 / -1;
+}
+
+.fw-subtitle {
+  margin: 28px 0 14px;
+  padding-top: 20px;
+  border-top: 1px solid var(--line);
+}
+
+.fw-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 24px;
+}
+
+@media(max-width:1000px) {
+  .fw-status-grid {
+    grid-template-columns:
+      repeat(2,minmax(0,1fr));
+  }
+}
+
+@media(max-width:700px) {
+  .fw-status-grid,
+  .fw-form-grid {
+    grid-template-columns:1fr;
+  }
+
+  .fw-wide {
+    grid-column:auto;
+  }
+}

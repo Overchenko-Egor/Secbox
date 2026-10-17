@@ -3,6 +3,8 @@
 import fcntl
 import json
 import os
+import shutil
+import subprocess
 import sys
 import time
 from contextlib import contextmanager
@@ -11,6 +13,18 @@ from typing import Iterator
 
 import typer
 from pydantic import ValidationError
+
+from secbox.core.config_store import (
+    ConfigNotFoundError,
+    ConfigStore,
+    ConfigStoreError,
+    ConfigValidationError,
+)
+from secbox.modules.content_filter.doh_feed.store import (
+    DohFeedStore,
+    DohFeedStoreError,
+)
+
 
 from secbox.actions.vpn import (
     VpnActionError,
@@ -27,6 +41,18 @@ from secbox.actions.network_dhcp import (
     apply_network_dhcp_action,
     get_network_dhcp_action,
 )
+from secbox.actions.content_filter import (
+    ContentFilterActionError,
+    apply_content_filter_action,
+    get_content_filter_action,
+)
+from secbox.actions.firewall import (
+    FirewallActionError,
+    apply_firewall_action,
+    get_firewall_action,
+)
+from secbox.modules.firewall.models import FirewallConfig
+from secbox.modules.content_filter.models import ContentFilterConfig
 
 
 MAX_INPUT_BYTES = 1024 * 1024
@@ -361,6 +387,172 @@ def apply_vpn() -> None:
         )
 
 
+
+def _l2_handshake_status(
+    interface: str,
+) -> dict[str, object]:
+    """Read WireGuard handshake state in the privileged worker."""
+
+    wg = shutil.which("wg")
+
+    if wg is None:
+        return {
+            "handshake_age_seconds": None,
+            "error": "wg command is not available",
+        }
+
+    try:
+        result = subprocess.run(
+            [
+                wg,
+                "show",
+                interface,
+                "latest-handshakes",
+            ],
+            check=False,
+            capture_output=True,
+            text=True,
+            timeout=2,
+        )
+    except (OSError, subprocess.TimeoutExpired) as error:
+        return {
+            "handshake_age_seconds": None,
+            "error": str(error),
+        }
+
+    if result.returncode != 0:
+        return {
+            "handshake_age_seconds": None,
+            "error": (
+                result.stderr.strip()
+                or f"wg exited with {result.returncode}"
+            ),
+        }
+
+    timestamps: list[int] = []
+
+    for line in result.stdout.splitlines():
+        fields = line.split()
+
+        if len(fields) < 2:
+            continue
+
+        try:
+            timestamps.append(int(fields[-1]))
+        except ValueError:
+            continue
+
+    if not timestamps or max(timestamps) <= 0:
+        return {
+            "handshake_age_seconds": None,
+            "error": "WireGuard handshake has not occurred yet",
+        }
+
+    return {
+        "handshake_age_seconds": max(
+            0,
+            int(time.time()) - max(timestamps),
+        ),
+        "error": None,
+    }
+
+
+def _dashboard_context_payload() -> dict[str, object]:
+    """Build sanitized privileged context for the Web Dashboard."""
+
+    config_path = Path(
+        os.environ.get(
+            "SECBOX_CONFIG_PATH",
+            "/etc/secbox/config.yml",
+        )
+    )
+
+    try:
+        config = ConfigStore(config_path).load()
+    except (
+        ConfigNotFoundError,
+        ConfigValidationError,
+        ConfigStoreError,
+    ) as error:
+        raise ValueError(
+            f"dashboard configuration is unavailable: {error}"
+        ) from error
+
+    l2_handshakes: dict[str, object] = {}
+
+    if config.vpn is not None and config.vpn.enabled:
+        for tunnel in config.vpn.l2_tunnels:
+            if not tunnel.enabled:
+                continue
+
+            interface = tunnel.transport.interface
+
+            l2_handshakes[interface] = (
+                _l2_handshake_status(interface)
+            )
+
+    try:
+        feed_state = DohFeedStore().load()
+
+        addresses = getattr(
+            feed_state,
+            "addresses",
+            [],
+        )
+
+        updated_at = getattr(
+            feed_state,
+            "updated_at",
+            None,
+        )
+
+        doh_feed: dict[str, object] = {
+            "address_count": len(addresses),
+            "updated_at": (
+                updated_at.isoformat()
+                if updated_at is not None
+                else None
+            ),
+            "error": None,
+        }
+
+    except DohFeedStoreError as error:
+        doh_feed = {
+            "address_count": None,
+            "updated_at": None,
+            "error": str(error),
+        }
+
+    safe_config = {
+        "network": config.network.model_dump(
+            mode="json"
+        ),
+        "firewall": (
+            config.firewall.model_dump(mode="json")
+            if config.firewall is not None
+            else None
+        ),
+        "content_filter": (
+            config.content_filter.model_dump(
+                mode="json"
+            )
+            if config.content_filter is not None
+            else None
+        ),
+        "vpn": (
+            config.vpn.model_dump(mode="json")
+            if config.vpn is not None
+            else None
+        ),
+    }
+
+    return {
+        "config": safe_config,
+        "l2_handshakes": l2_handshakes,
+        "doh_feed": doh_feed,
+    }
+
+
 @app.command(
     "socket-request",
     hidden=True,
@@ -382,6 +574,22 @@ def socket_request() -> None:
         action = request.get(
             "action"
         )
+
+        if action == "get-dashboard-context":
+            if set(request) != {
+                "action",
+            }:
+                raise ValueError(
+                    "unexpected get-dashboard-context fields"
+                )
+
+            _emit(
+                {
+                    "ok": True,
+                    "result": _dashboard_context_payload(),
+                }
+            )
+            return
 
         if action == "get-network-dhcp":
             if set(request) != {
@@ -437,6 +645,182 @@ def socket_request() -> None:
 
             return
 
+        if action == "get-firewall":
+            if set(request) != {"action"}:
+                raise ValueError(
+                    "unexpected get-firewall fields"
+                )
+
+            firewall = get_firewall_action()
+
+            _emit(
+                {
+                    "ok": True,
+                    "result": {
+                        "firewall": (
+                            firewall.model_dump(mode="json")
+                            if firewall is not None
+                            else None
+                        )
+                    },
+                }
+            )
+            return
+
+        if action == "apply-firewall":
+            if set(request) != {
+                "action",
+                "firewall",
+            }:
+                raise ValueError(
+                    "unexpected apply-firewall fields"
+                )
+
+            try:
+                firewall = FirewallConfig.model_validate(
+                    request["firewall"]
+                )
+
+                result = apply_firewall_action(
+                    firewall
+                )
+
+            except (
+                FirewallActionError,
+                ValidationError,
+            ) as error:
+                _emit(
+                    {
+                        "ok": False,
+                        "error": "apply_failed",
+                        "detail": str(error),
+                    }
+                )
+                raise typer.Exit(EXIT_FAILED)
+
+            _emit(
+                {
+                    "ok": True,
+                    "result": {
+                        "enabled": result.enabled,
+                        "wan_interface": result.wan_interface,
+                        "lan_interface": result.lan_interface,
+                        "management_interface": (
+                            result.management_interface
+                        ),
+                        "nat_enabled": result.nat_enabled,
+                        "dynamic_blacklist_enabled": (
+                            result.dynamic_blacklist_enabled
+                        ),
+                    },
+                }
+            )
+            return
+
+        if action == "get-firewall-runtime":
+            if set(request) != {"action"}:
+                raise ValueError(
+                    "unexpected get-firewall-runtime fields"
+                )
+
+            from secbox.actions.firewall_runtime import (
+                FirewallRuntimeError,
+                get_firewall_runtime_action,
+            )
+
+            try:
+                runtime = (
+                    get_firewall_runtime_action()
+                )
+
+            except FirewallRuntimeError as error:
+                _emit(
+                    {
+                        "ok": False,
+                        "error": "runtime_failed",
+                        "detail": str(error),
+                    }
+                )
+                return
+
+            _emit(
+                {
+                    "ok": True,
+                    "result": {
+                        "runtime": runtime,
+                    },
+                }
+            )
+            return
+
+        if action == "get-content-filter":
+            if set(request) != {"action"}:
+                raise ValueError(
+                    "unexpected get-content-filter fields"
+                )
+
+            content_filter = get_content_filter_action()
+
+            _emit(
+                {
+                    "ok": True,
+                    "result": {
+                        "content_filter": (
+                            content_filter.model_dump(mode="json")
+                            if content_filter is not None
+                            else None
+                        )
+                    },
+                }
+            )
+            return
+
+        if action == "apply-content-filter":
+            if set(request) != {
+                "action",
+                "content_filter",
+            }:
+                raise ValueError(
+                    "unexpected apply-content-filter fields"
+                )
+
+            try:
+                content_filter = ContentFilterConfig.model_validate(
+                    request["content_filter"]
+                )
+
+                result = apply_content_filter_action(
+                    content_filter
+                )
+
+            except (
+                ContentFilterActionError,
+                ValidationError,
+            ) as error:
+                _emit(
+                    {
+                        "ok": False,
+                        "error": "apply_failed",
+                        "detail": str(error),
+                    }
+                )
+                raise typer.Exit(EXIT_FAILED)
+
+            _emit(
+                {
+                    "ok": True,
+                    "result": {
+                        "enabled": result.enabled,
+                        "blocked_domains": result.blocked_domains,
+                        "doh_enabled": result.doh_enabled,
+                        "managed_feed_enabled": (
+                            result.managed_feed_enabled
+                        ),
+                    },
+                }
+            )
+            return
+
         if action == "get-vpn":
             if set(request) != {
                 "action",
@@ -481,6 +865,69 @@ def socket_request() -> None:
                     code
                 )
 
+            return
+
+        if action == "get-services":
+            if set(request) != {"action"}:
+                raise ValueError(
+                    "unexpected get-services fields"
+                )
+
+            from secbox.actions.services import (
+                get_managed_services_action,
+            )
+
+            _emit(
+                {
+                    "ok": True,
+                    "result": {
+                        "services": (
+                            get_managed_services_action()
+                        )
+                    },
+                }
+            )
+            return
+
+        if action == "service-action":
+            if set(request) != {
+                "action",
+                "unit",
+                "operation",
+            }:
+                raise ValueError(
+                    "unexpected service-action fields"
+                )
+
+            from secbox.actions.services import (
+                ServiceActionError,
+                service_action,
+            )
+
+            try:
+                result = service_action(
+                    str(request["unit"]),
+                    str(request["operation"]),
+                )
+
+            except ServiceActionError as error:
+                _emit(
+                    {
+                        "ok": False,
+                        "error": "service_action_failed",
+                        "detail": str(error),
+                    }
+                )
+                return
+
+            _emit(
+                {
+                    "ok": True,
+                    "result": {
+                        "service": result,
+                    },
+                }
+            )
             return
 
         raise ValueError(

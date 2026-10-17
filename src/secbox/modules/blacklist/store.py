@@ -107,10 +107,13 @@ class BlacklistStore:
                     temporary_file.fileno()
                 )
 
+            # SECBOX_WEB_READABLE_RUNTIME
+            Path(temporary_path).chmod(0o644)
             os.replace(
                 temporary_path,
                 self.path,
             )
+            Path(self.path).chmod(0o644)
 
             temporary_path = None
 

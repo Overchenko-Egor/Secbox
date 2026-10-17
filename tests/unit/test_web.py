@@ -1,3 +1,4 @@
+import re
 """HTTP boundary tests: authentication, preview isolation and failure states."""
 
 from collections.abc import Iterator
@@ -436,9 +437,11 @@ def test_panel_contains_system_overview(client: TestClient) -> None:
 
     assert "drawOverview" in javascript
     assert "drawAttention" in javascript
-    assert "nftables.service" in javascript
-    assert "suricata.service" in javascript
-    assert "secbox-ids.service" in javascript
+    assert '["dashboard", "global-message", drawOverview]' in javascript
+    assert 'id="dashboard-system-health"' in html
+    assert 'id="dhcp-health"' in html
+    assert 'id="suricata-health"' in html
+    assert 'id="blacklist-health"' in html
 
 
 def test_network_status_returns_managed_interface_roles(
@@ -889,3 +892,26 @@ def test_vpn_config_get_handles_helper_failure(
     )
 
     assert response.status_code == 503
+
+
+
+def test_management_editors_are_deferred_until_router_initialized() -> None:
+    javascript = (
+        Path("src/secbox/web/static/app.js")
+        .read_text(encoding="utf-8")
+    )
+
+    # VPN editor must not synchronously call boot()
+    # before SECBOX_ROUTE_ALIASES is initialized.
+    assert "window.setTimeout(boot, 0);" in javascript
+
+    # Network/DHCP editor has the same dependency
+    # on secboxCurrentPath(). Ignore whitespace/formatting.
+    assert re.search(
+        r"window\.setTimeout\(\s*"
+        r"initializeNetworkDhcpEditor\s*,\s*"
+        r"0\s*\)",
+        javascript,
+    )
+
+    assert "const SECBOX_ROUTE_ALIASES" in javascript

@@ -175,3 +175,51 @@ def test_render_routing_policy(tmp_path: Path) -> None:
     assert "IncomingInterface=ens36" in content
     assert "Table=100" in content
     assert "Priority=1000" in content
+
+def test_render_l2_interface_is_unmanaged(tmp_path: Path) -> None:
+    config = NetworkConfig(
+        interfaces=[
+            NetworkInterfaceConfig(
+                name="ens37",
+                role="l2",
+                ipv4_method="disabled",
+            )
+        ]
+    )
+
+    files = render_networkd(
+        config,
+        tmp_path,
+    )
+
+    assert len(files) == 1
+
+    content = files[0].read_text(
+        encoding="utf-8",
+    )
+
+    assert "Name=ens37" in content
+    assert "[Link]" in content
+    assert "Unmanaged=yes" in content
+    assert "[Network]" not in content
+    assert "DHCP=" not in content
+
+
+def test_render_l2_interface_is_unmanaged(tmp_path: Path) -> None:
+    config = NetworkConfig(
+        interfaces=[
+            NetworkInterfaceConfig(
+                name="ens37",
+                role="l2",
+                ipv4_method="disabled",
+            )
+        ]
+    )
+
+    files = render_networkd(config, tmp_path)
+    content = files[0].read_text(encoding="utf-8")
+
+    assert "[Link]" in content
+    assert "Unmanaged=yes" in content
+    assert "[Network]" not in content
+    assert "DHCP=" not in content

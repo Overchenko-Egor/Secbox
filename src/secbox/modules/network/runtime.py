@@ -168,10 +168,13 @@ class NetworkRuntimeStore:
                 encoding="utf-8",
             )
 
+            # SECBOX_WEB_READABLE_RUNTIME
+            Path(temporary).chmod(0o644)
             os.replace(
                 temporary,
                 self.path,
             )
+            Path(self.path).chmod(0o644)
         except OSError as error:
             raise NetworkRuntimeError(
                 f"failed to write network runtime metadata: {error}"

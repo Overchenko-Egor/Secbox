@@ -9,16 +9,109 @@
 </head>
 <body>
   <aside>
-    <a class="brand" href="#overview"><span class="brand-mark">S</span> SecBox</a>
+    <a class="brand" href="/"><span class="brand-mark">S</span> SecBox</a>
     <p class="eyebrow">Управление шлюзом</p>
-    <nav aria-label="Разделы">
-      <a href="#overview">Обзор</a><a href="#vpn">VPN</a>
-      <a href="#network">Сеть и маршруты</a><a href="#services">Сервисы</a>
-      <a href="#configuration">Конфигурация</a>
+    <nav class="sidebar-nav" aria-label="Разделы">
+
+      <section class="nav-group" data-nav-group="monitoring">
+        <button class="nav-group-toggle" type="button" aria-expanded="false">
+          <span class="nav-group-title">Мониторинг</span>
+          <span class="nav-chevron">⌄</span>
+        </button>
+
+        <div class="nav-group-content">
+          <a href="/" data-page-link="overview">
+            <span class="nav-icon">OV</span><span>Обзор</span>
+          </a>
+
+          <a href="/monitoring/network" data-page-link="monitor-network">
+            <span class="nav-icon">NW</span><span>Сеть</span>
+          </a>
+
+          <a href="/monitoring/vpn/l3" data-page-link="monitor-vpn">
+            <span class="nav-icon">VP</span><span>VPN</span>
+          </a>
+
+          <a href="/monitoring/firewall" data-page-link="monitor-firewall">
+            <span class="nav-icon">FW</span><span>Firewall</span>
+          </a>
+
+          <a href="/monitoring/ids" data-page-link="monitor-ids">
+            <span class="nav-icon">ID</span><span>IDS / IPS</span>
+          </a>
+
+          <a href="/monitoring/blackhole" data-page-link="monitor-blackhole">
+            <span class="nav-icon">BH</span><span>Blackhole</span>
+          </a>
+
+          <a href="/monitoring/content-filter" data-page-link="monitor-content-filter">
+            <span class="nav-icon">CF</span><span>Content Filter</span>
+          </a>
+
+          <a href="/monitoring/services" data-page-link="monitor-services">
+            <span class="nav-icon">SV</span><span>Службы</span>
+          </a>
+
+          <a href="/monitoring/system" data-page-link="monitor-system">
+            <span class="nav-icon">SY</span><span>Система</span>
+          </a>
+        </div>
+      </section>
+
+      <section class="nav-group" data-nav-group="management">
+        <button class="nav-group-toggle" type="button" aria-expanded="false">
+          <span class="nav-group-title">Управление</span>
+          <span class="nav-chevron">⌄</span>
+        </button>
+
+        <div class="nav-group-content">
+
+
+          <a href="/manage/network/interfaces"
+             data-page-link="manage-network">
+            <span class="nav-icon">NW</span><span>Сеть</span>
+          </a>
+
+
+
+          <a href="/manage/vpn/l3"
+             data-page-link="manage-vpn">
+            <span class="nav-icon">VP</span><span>VPN</span>
+          </a>
+
+
+          <a href="/manage/firewall" data-page-link="manage-firewall">
+            <span class="nav-icon">FW</span><span>Firewall</span>
+          </a>
+
+          <a href="/manage/ids" data-page-link="manage-ids">
+            <span class="nav-icon">ID</span><span>IDS / IPS</span>
+          </a>
+
+          <a href="/manage/blackhole" data-page-link="manage-blackhole">
+            <span class="nav-icon">BH</span><span>Blackhole</span>
+          </a>
+
+          <a href="/manage/content-filter" data-page-link="manage-content-filter">
+            <span class="nav-icon">CF</span><span>Content Filter</span>
+          </a>
+
+          <a href="/manage/services" data-page-link="manage-services">
+            <span class="nav-icon">SV</span><span>Службы</span>
+          </a>
+
+          <a href="/manage/system" data-page-link="manage-system">
+            <span class="nav-icon">SY</span><span>Система</span>
+          </a>
+
+        </div>
+      </section>
+
     </nav>
-    <div class="aside-note">● Просмотр и проверка<small>Изменения сети выполняются через CLI.</small></div>
+    <div class="aside-note">● SecBox Web Console<small>Мониторинг и управление шлюзом.</small></div>
   </aside>
-  <main>
+  <main id="app-main">
+    <div id="page-breadcrumb" class="page-breadcrumb"></div>
     <header id="overview">
       <div><p class="eyebrow">Состояние системы</p><h1 id="hostname">SecBox</h1><p id="observed">Загрузка данных…</p></div>
       <div class="header-actions">
@@ -30,45 +123,177 @@
     </header>
     <p id="global-message" role="status" aria-live="polite"></p>
     <section class="health-grid" aria-label="Состояние компонентов">
-      <article class="health-card" id="firewall-health-card">
+
+      <article class="health-card">
         <div class="health-card-top">
-          <span class="health-icon">FW</span>
-          <span id="firewall-health" class="component-status unknown">UNKNOWN</span>
+          <span class="health-icon">SYS</span>
+          <span
+            id="dashboard-system-health"
+            class="component-status unknown"
+          >UNKNOWN</span>
         </div>
-        <h3>Firewall</h3>
-        <strong id="firewall-summary">Проверка…</strong>
-        <small id="firewall-detail">nftables.service</small>
+        <h3>System</h3>
+        <strong id="dashboard-system-summary">
+          Проверка…
+        </strong>
+        <small id="dashboard-system-detail">
+          Системные метрики
+        </small>
       </article>
 
-      <article class="health-card" id="ids-health-card">
-        <div class="health-card-top">
-          <span class="health-icon">IDS</span>
-          <span id="ids-health" class="component-status unknown">UNKNOWN</span>
-        </div>
-        <h3>IDS</h3>
-        <strong id="ids-summary">Проверка…</strong>
-        <small id="ids-detail">Suricata / SecBox IDS</small>
-      </article>
-
-      <article class="health-card" id="vpn-health-card">
-        <div class="health-card-top">
-          <span class="health-icon">VPN</span>
-          <span id="overview-vpn-health" class="component-status unknown">UNKNOWN</span>
-        </div>
-        <h3>VPN</h3>
-        <strong id="overview-vpn-summary">Проверка…</strong>
-        <small id="overview-vpn-detail">VPN pool</small>
-      </article>
-
-      <article class="health-card" id="network-health-card">
+      <article class="health-card">
         <div class="health-card-top">
           <span class="health-icon">NET</span>
-          <span id="network-health" class="component-status unknown">UNKNOWN</span>
+          <span
+            id="network-health"
+            class="component-status unknown"
+          >UNKNOWN</span>
         </div>
         <h3>Network</h3>
-        <strong id="network-summary">Проверка…</strong>
-        <small id="network-detail">Сетевые интерфейсы</small>
+        <strong id="network-summary">
+          Проверка…
+        </strong>
+        <small id="network-detail">
+          Сетевые интерфейсы
+        </small>
       </article>
+
+      <article class="health-card">
+        <div class="health-card-top">
+          <span class="health-icon">VPN</span>
+          <span
+            id="overview-vpn-health"
+            class="component-status unknown"
+          >UNKNOWN</span>
+        </div>
+        <h3>VPN</h3>
+        <strong id="overview-vpn-summary">
+          Проверка…
+        </strong>
+        <small id="overview-vpn-detail">
+          VPN runtime
+        </small>
+      </article>
+
+      <article class="health-card">
+        <div class="health-card-top">
+          <span class="health-icon">L2</span>
+          <span
+            id="overview-l2-vpn-health"
+            class="component-status unknown"
+          >UNKNOWN</span>
+        </div>
+        <h3>L2 VPN</h3>
+        <strong id="overview-l2-vpn-summary">
+          Проверка…
+        </strong>
+        <small id="overview-l2-vpn-detail">
+          WireGuard · GRETAP · Bridge
+        </small>
+      </article>
+
+      <article class="health-card">
+        <div class="health-card-top">
+          <span class="health-icon">DHCP</span>
+          <span
+            id="dhcp-health"
+            class="component-status unknown"
+          >UNKNOWN</span>
+        </div>
+        <h3>DHCP</h3>
+        <strong id="dhcp-summary">
+          Проверка…
+        </strong>
+        <small id="dhcp-detail">
+          dnsmasq.service
+        </small>
+      </article>
+
+      <article class="health-card">
+        <div class="health-card-top">
+          <span class="health-icon">FW</span>
+          <span
+            id="firewall-health"
+            class="component-status unknown"
+          >UNKNOWN</span>
+        </div>
+        <h3>Firewall</h3>
+        <strong id="firewall-summary">
+          Проверка…
+        </strong>
+        <small id="firewall-detail">
+          secbox-firewall.service
+        </small>
+      </article>
+
+      <article class="health-card">
+        <div class="health-card-top">
+          <span class="health-icon">IDS</span>
+          <span
+            id="ids-health"
+            class="component-status unknown"
+          >UNKNOWN</span>
+        </div>
+        <h3>IDS Processor</h3>
+        <strong id="ids-summary">
+          Проверка…
+        </strong>
+        <small id="ids-detail">
+          secbox-ids.service
+        </small>
+      </article>
+
+      <article class="health-card">
+        <div class="health-card-top">
+          <span class="health-icon">SUR</span>
+          <span
+            id="suricata-health"
+            class="component-status unknown"
+          >UNKNOWN</span>
+        </div>
+        <h3>Suricata</h3>
+        <strong id="suricata-summary">
+          Проверка…
+        </strong>
+        <small id="suricata-detail">
+          suricata.service
+        </small>
+      </article>
+
+      <article class="health-card">
+        <div class="health-card-top">
+          <span class="health-icon">BH</span>
+          <span
+            id="blacklist-health"
+            class="component-status unknown"
+          >UNKNOWN</span>
+        </div>
+        <h3>Blackhole</h3>
+        <strong id="blacklist-summary">
+          Проверка…
+        </strong>
+        <small id="blacklist-detail">
+          Динамический blacklist
+        </small>
+      </article>
+
+      <article class="health-card">
+        <div class="health-card-top">
+          <span class="health-icon">CF</span>
+          <span
+            id="content-filter-health"
+            class="component-status unknown"
+          >UNKNOWN</span>
+        </div>
+        <h3>Content Filter</h3>
+        <strong id="content-filter-summary">
+          Проверка…
+        </strong>
+        <small id="content-filter-detail">
+          DNS · DoH · Firewall
+        </small>
+      </article>
+
     </section>
 
     <section class="metrics" aria-label="Показатели системы">
@@ -91,7 +316,9 @@
       </div>
     </section>
 
-    <section id="vpn" class="panel vpn-panel">
+    <section id="vpn"
+             class="panel vpn-panel"
+             data-secbox-page="monitor-vpn-l3">
       <div class="section-heading">
         <div>
           <p class="eyebrow">Отказоустойчивый канал</p>
@@ -126,95 +353,296 @@
       <div id="vpn-events" class="vpn-events">
         <p class="hint">История переключений пока пуста.</p>
       </div>
-    </section>
 
-    <section id="network" class="panel">
+      <div class="vpn-l2-monitor" id="vpn-l2-monitor">
+        <div class="vpn-events-heading vpn-l2-heading">
+          <div>
+            <p class="eyebrow">Layer 2 transport</p>
+            <h3>L2 VPN Overlays</h3>
+          </div>
 
-        <div id="network-config-editor" class="config-editor">
-          <div class="config-header">
-            <div>
-              <h2>Конфигурация сети</h2>
-              <p class="muted">
-                Физические интерфейсы SecBox, IPv4 и DHCP.
-              </p>
-            </div>
+          <div class="vpn-l2-heading-actions">
+            <span id="vpn-l2-overall-status"
+                  class="vpn-status">UNKNOWN</span>
 
-            <button
-              id="network-config-reload"
-              class="secondary-button"
-              type="button"
-            >
+            <button id="vpn-l2-refresh"
+                    class="secondary"
+                    type="button">
               Обновить
-            </button>
-          </div>
-
-          <div
-            id="network-config-message"
-            class="config-message"
-            hidden
-          ></div>
-
-          <div class="network-warning">
-            <strong>Внимание:</strong>
-            изменение MGMT-интерфейса может привести к потере
-            доступа к Web UI. L2-интерфейсы, используемые VPN,
-            также не следует менять без изменения L2 VPN.
-          </div>
-
-          <h3>Интерфейсы</h3>
-
-          <div
-            id="network-interface-list"
-            class="network-interface-list"
-          ></div>
-
-          <div class="network-section-heading">
-            <div>
-              <h3>DHCP</h3>
-              <p class="muted">
-                DHCP-серверы для LAN и L2 bridge.
-              </p>
-            </div>
-
-            <button
-              id="dhcp-add-scope"
-              class="secondary-button"
-              type="button"
-            >
-              + Добавить DHCP
-            </button>
-          </div>
-
-          <div
-            id="dhcp-scope-list"
-            class="dhcp-scope-list"
-          ></div>
-
-          <div class="config-actions network-config-actions">
-            <button
-              id="network-config-validate"
-              class="secondary-button"
-              type="button"
-            >
-              Проверить
-            </button>
-
-            <button
-              id="network-config-apply"
-              class="primary-button"
-              type="button"
-            >
-              Применить
             </button>
           </div>
         </div>
 
-      <div class="section-heading"><div><p class="eyebrow">Сеть</p><h2>Интерфейсы</h2></div><span class="tag">Текущее состояние</span></div>
-      <p id="network-error" class="error" role="status"></p>
-      <div class="table-wrap"><table><thead><tr><th>Интерфейс</th><th>Состояние</th><th>IP-адреса</th><th>MAC</th><th>MTU</th></tr></thead><tbody id="interfaces-body"></tbody></table></div>
-      <h3>Маршруты IPv4</h3><p id="routes-error" class="error" role="status"></p>
-      <div class="table-wrap"><table><thead><tr><th>Назначение</th><th>Шлюз</th><th>Интерфейс</th><th>Таблица</th><th>Метрика</th></tr></thead><tbody id="routes-body"></tbody></table></div>
+        <p class="hint">
+          Runtime WireGuard, GRETAP, bridge и физических
+          L2 access-портов.
+        </p>
+
+        <p id="vpn-l2-message" class="hint">
+          Данные ещё не получены.
+        </p>
+
+        <p id="vpn-l2-error"
+           class="error"
+           role="status"></p>
+
+        <div id="vpn-l2-tunnels"
+             class="vpn-l2-tunnels">
+          <p class="hint">
+            Загрузка L2 VPN runtime…
+          </p>
+        </div>
+      </div>
+
+</section>
+
+    <!-- =====================================================
+         Monitoring / VPN / L2
+         ===================================================== -->
+    <section id="vpn-l2-monitoring-page"
+             class="panel vpn-panel"
+             data-secbox-page="monitor-vpn-l2"
+             hidden>
+
+      <div class="section-heading">
+        <div>
+          <p class="eyebrow">Мониторинг / VPN</p>
+          <h2>L2 VPN Overlays</h2>
+        </div>
+
+        <div class="vpn-l2-heading-actions">
+          <span id="vpn-l2-overall-status"
+                class="vpn-status">
+            UNKNOWN
+          </span>
+
+          <button id="vpn-l2-refresh"
+                  type="button"
+                  class="secondary">
+            Обновить
+          </button>
+        </div>
+      </div>
+
+      <p class="hint">
+        Runtime-состояние Ethernet over WireGuard:
+        WireGuard transport, GRETAP, bridge и L2 access-порты.
+      </p>
+
+      <p id="vpn-l2-message"
+         class="hint">
+        Данные ещё не получены.
+      </p>
+
+      <p id="vpn-l2-error"
+         class="error"
+         role="status"></p>
+
+      <div id="vpn-l2-tunnels"
+           class="vpn-l2-tunnels">
+        <p class="hint">
+          Загрузка L2 VPN runtime…
+        </p>
+      </div>
     </section>
+
+
+    <!-- =====================================================
+         Monitoring / Network
+         ===================================================== -->
+    <section id="network-monitoring-page"
+             class="panel"
+             data-secbox-page="monitor-network">
+
+      <div class="section-heading">
+        <div>
+          <p class="eyebrow">Мониторинг / Сеть</p>
+          <h2>Состояние сети</h2>
+        </div>
+        <span class="tag">Runtime</span>
+      </div>
+
+      <p class="hint">
+        Текущее состояние физических интерфейсов и таблицы маршрутизации.
+        Изменения конфигурации выполняются в разделе «Управление → Сеть».
+      </p>
+
+      <p id="network-error" class="error" role="status"></p>
+
+      <h3>Интерфейсы</h3>
+
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Интерфейс</th>
+              <th>Состояние</th>
+              <th>IP-адреса</th>
+              <th>MAC</th>
+              <th>MTU</th>
+            </tr>
+          </thead>
+          <tbody id="interfaces-body"></tbody>
+        </table>
+      </div>
+
+      <h3>Маршруты IPv4</h3>
+
+      <p id="routes-error" class="error" role="status"></p>
+
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Назначение</th>
+              <th>Шлюз</th>
+              <th>Интерфейс</th>
+              <th>Таблица</th>
+              <th>Метрика</th>
+            </tr>
+          </thead>
+          <tbody id="routes-body"></tbody>
+        </table>
+      </div>
+    </section>
+
+
+    <!-- =====================================================
+         Management / Network / Interfaces
+         ===================================================== -->
+    <section id="network-interfaces-page"
+             class="panel"
+             data-secbox-page="manage-network">
+
+      <div class="config-header">
+        <div>
+          <p class="eyebrow">Управление / Сеть</p>
+          <h2>Интерфейсы</h2>
+          <p class="muted">
+            Роли физических интерфейсов, IPv4 и таблицы маршрутизации.
+          </p>
+        </div>
+
+        <button id="network-config-reload"
+                class="secondary-button"
+                type="button">
+          Обновить
+        </button>
+      </div>
+
+      <nav class="page-tabs" aria-label="Настройки сети">
+        <a href="/manage/network/interfaces"
+           class="page-tab active">
+          Интерфейсы
+        </a>
+
+        <a href="/manage/network/dhcp"
+           class="page-tab">
+          DHCP / DNS
+        </a>
+      </nav>
+
+      <div id="network-interface-message"
+           class="config-message"
+           hidden></div>
+
+      <div class="network-warning">
+        <strong>Внимание:</strong>
+        изменение MGMT-интерфейса может привести к потере доступа
+        к Web UI. L2-интерфейсы могут использоваться L2 VPN.
+      </div>
+
+      <div id="network-interface-list"
+           class="network-interface-list"></div>
+
+      <div class="config-actions network-config-actions">
+        <button id="network-interface-validate"
+                class="secondary-button"
+                type="button">
+          Проверить
+        </button>
+
+        <button id="network-interface-apply"
+                class="primary-button"
+                type="button">
+          Применить
+        </button>
+      </div>
+    </section>
+
+
+    <!-- =====================================================
+         Management / Network / DHCP
+         ===================================================== -->
+    <section id="network-dhcp-page"
+             class="panel"
+             data-secbox-page="manage-dhcp">
+
+      <div class="config-header">
+        <div>
+          <p class="eyebrow">Управление / Сеть</p>
+          <h2>DHCP / DNS</h2>
+          <p class="muted">
+            DHCP scopes и DNS-параметры клиентских сетей.
+          </p>
+        </div>
+
+        <button id="dhcp-config-reload"
+                class="secondary-button"
+                type="button">
+          Обновить
+        </button>
+      </div>
+
+      <nav class="page-tabs" aria-label="Настройки сети">
+        <a href="/manage/network/interfaces"
+           class="page-tab">
+          Интерфейсы
+        </a>
+
+        <a href="/manage/network/dhcp"
+           class="page-tab active">
+          DHCP / DNS
+        </a>
+      </nav>
+
+      <div id="dhcp-config-message"
+           class="config-message"
+           hidden></div>
+
+      <div class="network-section-heading">
+        <div>
+          <h3>DHCP scopes</h3>
+          <p class="muted">
+            Адресные пулы, gateway, DNS и lease time.
+          </p>
+        </div>
+
+        <button id="dhcp-add-scope"
+                class="secondary-button"
+                type="button">
+          + Добавить DHCP
+        </button>
+      </div>
+
+      <div id="dhcp-scope-list"
+           class="dhcp-scope-list"></div>
+
+      <div class="config-actions network-config-actions">
+        <button id="dhcp-config-validate"
+                class="secondary-button"
+                type="button">
+          Проверить
+        </button>
+
+        <button id="dhcp-config-apply"
+                class="primary-button"
+                type="button">
+          Применить
+        </button>
+      </div>
+    </section>
+
     <section id="services" class="panel">
       <div class="section-heading"><div><p class="eyebrow">Компоненты</p><h2>Сервисы</h2></div></div>
       <p class="hint">Состояния служб systemd. Они не подтверждают, что правила фильтрации применены или трафик защищён.</p>

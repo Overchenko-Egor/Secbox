@@ -196,6 +196,408 @@ function drawVpnStatus(data) {
   }
 }
 
+
+function vpnL2DashboardStatus(status) {
+  if (status === "ok") return "healthy";
+  if (status === "warning") return "degraded";
+  if (status === "error") return "down";
+  return "unknown";
+}
+
+
+function vpnL2InterfaceState(value) {
+  if (!value || typeof value !== "object") {
+    return "недоступно";
+  }
+
+  const operstate =
+    String(value.operstate || "UNKNOWN").toUpperCase();
+
+  const admin =
+    value.admin_up === true
+      ? "UP"
+      : value.admin_up === false
+        ? "DOWN"
+        : "UNKNOWN";
+
+  return `${operstate} · admin ${admin}`;
+}
+
+
+function vpnL2Metric(label, value) {
+  const item = document.createElement("div");
+  const dt = document.createElement("dt");
+  const dd = document.createElement("dd");
+
+  dt.textContent = label;
+  dd.textContent =
+    value === null ||
+    value === undefined ||
+    value === ""
+      ? "—"
+      : String(value);
+
+  item.append(dt, dd);
+
+  return item;
+}
+
+
+function drawL2VpnMonitoring(component, vpnConfig) {
+  const target = byId("vpn-l2-tunnels");
+
+  if (!target) return;
+
+  const overall = byId("vpn-l2-overall-status");
+  const message = byId("vpn-l2-message");
+  const error = byId("vpn-l2-error");
+
+  error.textContent = "";
+
+  if (!component) {
+    overall.className = "vpn-status";
+    overall.textContent = "UNKNOWN";
+    message.textContent =
+      "L2 VPN runtime недоступен.";
+
+    target.replaceChildren();
+
+    const empty = document.createElement("p");
+    empty.className = "hint";
+    empty.textContent =
+      "Dashboard не вернул компонент l2_vpn.";
+
+    target.append(empty);
+    return;
+  }
+
+  const cssStatus =
+    vpnL2DashboardStatus(component.status);
+
+  overall.className =
+    vpnStatusClass(cssStatus);
+
+  overall.textContent =
+    vpnStatusLabel(cssStatus);
+
+  message.textContent =
+    component.message || "—";
+
+  const runtimeTunnels =
+    component.details?.tunnels || [];
+
+  const configured =
+    vpnConfig?.l2_tunnels || [];
+
+  const configByName = new Map(
+    configured.map((tunnel) => [
+      tunnel.name,
+      tunnel,
+    ])
+  );
+
+  target.replaceChildren();
+
+  for (const tunnel of runtimeTunnels) {
+    const config =
+      configByName.get(tunnel.name) || {};
+
+    const transport = config.transport || {};
+    const peer = transport.peer || {};
+    const bridge = config.bridge || {};
+    const encap = config.encapsulation || {};
+
+    const card =
+      document.createElement("article");
+
+    card.className = "vpn-l2-card";
+
+    const header =
+      document.createElement("div");
+
+    header.className = "vpn-tunnel-top";
+
+    const identity =
+      document.createElement("div");
+
+    const name =
+      document.createElement("strong");
+
+    name.textContent =
+      tunnel.name || "L2 VPN";
+
+    const interfaces =
+      document.createElement("span");
+
+    interfaces.className = "vpn-interface";
+    interfaces.textContent = [
+      tunnel.transport_interface,
+      tunnel.gretap_interface,
+      tunnel.bridge_interface,
+    ]
+      .filter(Boolean)
+      .join(" → ");
+
+    identity.append(name, interfaces);
+
+    const status =
+      document.createElement("span");
+
+    const tunnelCss =
+      vpnL2DashboardStatus(tunnel.status);
+
+    status.className =
+      vpnStatusClass(tunnelCss);
+
+    status.textContent =
+      vpnStatusLabel(tunnelCss);
+
+    header.append(identity, status);
+
+
+    const metrics =
+      document.createElement("dl");
+
+    metrics.className =
+      "vpn-l2-metrics";
+
+    metrics.append(
+      vpnL2Metric(
+        "Handshake",
+        formatHandshake(
+          tunnel.handshake_age_seconds
+        )
+      ),
+      vpnL2Metric(
+        "WG transport",
+        tunnel.transport_interface
+      ),
+      vpnL2Metric(
+        "Transport address",
+        transport.address
+      ),
+      vpnL2Metric(
+        "Endpoint",
+        peer.endpoint
+      ),
+      vpnL2Metric(
+        "Bridge",
+        tunnel.bridge_interface
+      ),
+      vpnL2Metric(
+        "Bridge address",
+        bridge.address
+      ),
+      vpnL2Metric(
+        "GRETAP",
+        tunnel.gretap_interface
+      ),
+      vpnL2Metric(
+        "GRETAP local",
+        encap.local
+      ),
+      vpnL2Metric(
+        "GRETAP remote",
+        encap.remote
+      ),
+      vpnL2Metric(
+        "Effective MTU",
+        encap.mtu
+      ),
+      vpnL2Metric(
+        "Access ports",
+        (tunnel.access_ports || []).join(", ")
+      ),
+      vpnL2Metric(
+        "Bridge members",
+        (tunnel.bridge_members || []).join(", ")
+      )
+    );
+
+
+    const runtime =
+      document.createElement("div");
+
+    runtime.className =
+      "vpn-l2-runtime-grid";
+
+    const runtimeInterfaces =
+      tunnel.interfaces || {};
+
+    const runtimeRows = [
+      [
+        "WireGuard",
+        tunnel.transport_interface,
+        runtimeInterfaces.transport,
+      ],
+      [
+        "GRETAP",
+        tunnel.gretap_interface,
+        runtimeInterfaces.gretap,
+      ],
+      [
+        "Bridge",
+        tunnel.bridge_interface,
+        runtimeInterfaces.bridge,
+      ],
+    ];
+
+    for (const port of tunnel.access_ports || []) {
+      runtimeRows.push([
+        "Access",
+        port,
+        runtimeInterfaces[`access:${port}`],
+      ]);
+    }
+
+    for (const [role, iface, state] of runtimeRows) {
+      const row =
+        document.createElement("div");
+
+      row.className =
+        "vpn-l2-runtime-row";
+
+      const roleNode =
+        document.createElement("span");
+
+      roleNode.textContent = role;
+
+      const ifaceNode =
+        document.createElement("strong");
+
+      ifaceNode.textContent =
+        iface || "—";
+
+      const stateNode =
+        document.createElement("span");
+
+      stateNode.textContent =
+        vpnL2InterfaceState(state);
+
+      if (state?.master) {
+        stateNode.textContent +=
+          ` · master ${state.master}`;
+      }
+
+      row.append(
+        roleNode,
+        ifaceNode,
+        stateNode
+      );
+
+      runtime.append(row);
+    }
+
+
+    const notes =
+      document.createElement("div");
+
+    notes.className =
+      "vpn-l2-notes";
+
+    const errors =
+      tunnel.errors || [];
+
+    const warnings =
+      tunnel.warnings || [];
+
+    if (!errors.length && !warnings.length) {
+      const ok =
+        document.createElement("p");
+
+      ok.className = "vpn-l2-ok";
+      ok.textContent =
+        "Все компоненты overlay работают штатно.";
+
+      notes.append(ok);
+    }
+
+    for (const value of errors) {
+      const row =
+        document.createElement("p");
+
+      row.className = "error";
+      row.textContent = `Ошибка: ${value}`;
+
+      notes.append(row);
+    }
+
+    for (const value of warnings) {
+      const row =
+        document.createElement("p");
+
+      row.className =
+        "vpn-l2-warning";
+
+      row.textContent =
+        `Предупреждение: ${value}`;
+
+      notes.append(row);
+    }
+
+    card.append(
+      header,
+      metrics,
+      runtime,
+      notes
+    );
+
+    target.append(card);
+  }
+
+  if (!runtimeTunnels.length) {
+    const empty =
+      document.createElement("p");
+
+    empty.className = "hint";
+
+    empty.textContent =
+      "Нет включённых L2 VPN overlays.";
+
+    target.append(empty);
+  }
+}
+
+
+let vpnL2RefreshRunning = false;
+
+
+async function refreshL2VpnMonitoring() {
+  const target = byId("vpn-l2-tunnels");
+
+  if (!target || vpnL2RefreshRunning) {
+    return;
+  }
+
+  vpnL2RefreshRunning = true;
+
+  const error = byId("vpn-l2-error");
+
+  try {
+    const [dashboard, config] =
+      await Promise.all([
+        api("dashboard"),
+        api("vpn/config").catch(() => null),
+      ]);
+
+    drawL2VpnMonitoring(
+      dashboard?.components?.l2_vpn,
+      config?.vpn
+    );
+
+  } catch (exception) {
+    if (error) {
+      error.textContent =
+        `Не удалось получить L2 VPN runtime: ${
+          exception.message
+        }`;
+    }
+  } finally {
+    vpnL2RefreshRunning = false;
+  }
+}
+
+
 function drawVpnEvents(events) {
   const target = byId("vpn-events");
   target.replaceChildren();
@@ -253,291 +655,263 @@ function addAttention(items, severity, title, detail) {
   items.push({severity, title, detail});
 }
 
-function drawOverview(snapshot) {
-  const services = snapshot["services"];
-  const network = snapshot["network/status"];
-  const vpn = snapshot["vpn/status"];
+function dashboardCssStatus(status) {
+  if (status === "ok") return "healthy";
+  if (status === "warning") return "warning";
+  if (status === "error") return "critical";
+  return "unknown";
+}
 
-  const attention = [];
+function dashboardStatusLabel(status) {
+  if (status === "ok") return "OK";
+  if (status === "warning") return "WARNING";
+  if (status === "error") return "ERROR";
+  return "UNKNOWN";
+}
 
-  let firewallLevel = "unknown";
-  let idsLevel = "unknown";
-  let vpnLevel = "unknown";
-  let networkLevel = "unknown";
-
-  /*
-   * Firewall
-   *
-   * This reports the systemd service state only. It intentionally does not
-   * claim that the currently loaded nftables rules are semantically correct.
-   */
-  if (services) {
-    const nftables = findService(services, "nftables.service");
-
-    if (serviceIsActive(nftables)) {
-      firewallLevel = "healthy";
-      setComponentStatus("firewall-health", "healthy", "ACTIVE");
-      byId("firewall-summary").textContent = "Сервис активен";
-      byId("firewall-detail").textContent = "nftables.service · active";
-    } else if (nftables) {
-      firewallLevel = "critical";
-      setComponentStatus("firewall-health", "critical", "INACTIVE");
-      byId("firewall-summary").textContent = "Сервис не активен";
-      byId("firewall-detail").textContent =
-        `${nftables.active_state || "unknown"} / ${nftables.sub_state || "unknown"}`;
-
-      addAttention(
-        attention,
-        "critical",
-        "Firewall",
-        `nftables.service: ${nftables.active_state || "unknown"} / ${nftables.sub_state || "unknown"}`,
-      );
-    }
-
-    const suricata = findService(services, "suricata.service");
-    const idsProcessor = findService(services, "secbox-ids.service");
-
-    if (serviceIsActive(suricata) && serviceIsActive(idsProcessor)) {
-      idsLevel = "healthy";
-      setComponentStatus("ids-health", "healthy", "ACTIVE");
-      byId("ids-summary").textContent = "IDS работает";
-      byId("ids-detail").textContent = "Suricata + event processor";
-    } else {
-      idsLevel = "critical";
-      setComponentStatus("ids-health", "critical", "INACTIVE");
-      byId("ids-summary").textContent = "IDS работает не полностью";
-
-      const failed = [suricata, idsProcessor]
-        .filter((item) => !serviceIsActive(item))
-        .map((item) => item?.name || "unknown");
-
-      byId("ids-detail").textContent = failed.join(", ");
-
-      addAttention(
-        attention,
-        "critical",
-        "IDS",
-        `Неактивные компоненты: ${failed.join(", ")}`,
-      );
-    }
-
-    for (const service of services) {
-      if (
-        service.name === "nftables.service" ||
-        service.name === "suricata.service" ||
-        service.name === "secbox-ids.service"
-      ) {
-        continue;
-      }
-
-      if (service.error) {
-        addAttention(
-          attention,
-          "warning",
-          service.name,
-          "Не удалось определить состояние systemd-сервиса",
-        );
-      } else if (
-        service.load_state !== "not-found" &&
-        service.active_state !== "active"
-      ) {
-        addAttention(
-          attention,
-          "warning",
-          service.name,
-          `${service.active_state || "unknown"} / ${service.sub_state || "unknown"}`,
-        );
-      }
-    }
+function dashboardDetail(component) {
+  if (!component || !component.details) {
+    return "Нет дополнительных данных";
   }
 
-  /*
-   * VPN
-   */
-  if (vpn) {
-    const active = vpn.tunnels.find(
-      (tunnel) => tunnel.interface === vpn.active_interface
+  const details = component.details;
+
+  if (details.enabled_tunnels !== undefined) {
+    const tunnels = Array.isArray(details.tunnels)
+      ? details.tunnels
+      : [];
+
+    const ok = tunnels.filter(
+      (item) => item.status === "ok"
+    ).length;
+
+    return (
+      `туннелей ${details.enabled_tunnels}` +
+      (tunnels.length
+        ? ` · OK ${ok}/${tunnels.length}`
+        : "")
     );
-
-    const down = vpn.tunnels.filter(
-      (tunnel) => tunnel.status === "down"
-    );
-
-    const degraded = vpn.tunnels.filter(
-      (tunnel) => tunnel.status === "degraded"
-    );
-
-    if (!active || active.status === "down") {
-      vpnLevel = "critical";
-      setComponentStatus(
-        "overview-vpn-health",
-        "critical",
-        "DOWN",
-      );
-      byId("overview-vpn-summary").textContent =
-        vpn.active_interface
-          ? `${vpn.active_interface} недоступен`
-          : "Нет активного туннеля";
-
-      addAttention(
-        attention,
-        "critical",
-        "VPN",
-        vpn.reason || "Нет доступного активного VPN-туннеля",
-      );
-    } else if (active.status === "degraded" || down.length || degraded.length) {
-      vpnLevel = "warning";
-      setComponentStatus(
-        "overview-vpn-health",
-        "warning",
-        "DEGRADED",
-      );
-
-      byId("overview-vpn-summary").textContent =
-        `${vpn.active_interface} активен`;
-
-      const affected = [...down, ...degraded]
-        .map((tunnel) => `${tunnel.name} (${tunnel.interface})`)
-        .join(", ");
-
-      addAttention(
-        attention,
-        "warning",
-        "VPN Pool",
-        affected
-          ? `Проблемы: ${affected}`
-          : vpn.reason,
-      );
-    } else {
-      vpnLevel = "healthy";
-      setComponentStatus(
-        "overview-vpn-health",
-        "healthy",
-        "HEALTHY",
-      );
-      byId("overview-vpn-summary").textContent =
-        `${vpn.active_interface} активен`;
-    }
-
-    byId("overview-vpn-detail").textContent =
-      `${vpn.tunnels.length} туннеля · active ${vpn.active_interface || "—"}`;
   }
 
-  /*
-   * Network
-   */
-  /*
-   * Network
-   *
-   * Only interfaces managed by SecBox are evaluated here.
-   * Interfaces with role "unused" are intentionally excluded
-   * from appliance health.
-   */
-  if (network) {
-    const managed = network.interfaces.filter(
-      (item) =>
-        item.role !== "unused" &&
-        item.configured
-    );
-
-    const failed = managed.filter(
-      (item) =>
-        String(item.operstate).toUpperCase() !== "UP"
-    );
-
-    if (!managed.length) {
-      networkLevel = "unknown";
-
-      setComponentStatus(
-        "network-health",
-        "unknown",
-        "UNKNOWN",
-      );
-
-      byId("network-summary").textContent =
-        "Нет управляемых интерфейсов";
-
-      byId("network-detail").textContent =
-        "Network runtime не содержит активных ролей";
-    } else if (failed.length) {
-      networkLevel = "warning";
-
-      setComponentStatus(
-        "network-health",
-        "warning",
-        "DEGRADED",
-      );
-
-      byId("network-summary").textContent =
-        `${managed.length - failed.length}/${managed.length} UP`;
-
-      byId("network-detail").textContent =
-        failed
-          .map(
-            (item) =>
-              `${item.role.toUpperCase()} ${item.name}`
-          )
-          .join(", ");
-
-      addAttention(
-        attention,
-        "warning",
-        "Network",
-        `Неактивные интерфейсы: ${
-          failed
-            .map(
-              (item) =>
-                `${item.role.toUpperCase()} (${item.name})`
-            )
-            .join(", ")
-        }`,
-      );
-    } else {
-      networkLevel = "healthy";
-
-      setComponentStatus(
-        "network-health",
-        "healthy",
-        "HEALTHY",
-      );
-
-      byId("network-summary").textContent =
-        `${managed.length}/${managed.length} UP`;
-
-      byId("network-detail").textContent =
-        managed
-          .map(
-            (item) =>
-              `${item.role.toUpperCase()} ${item.name}`
-          )
-          .join(" · ");
+  if (details.enabled !== undefined) {
+    if (!details.enabled) {
+      return "Отключён конфигурацией";
     }
+
+    return (
+      `DNS ${details.dns_enabled ? "ON" : "OFF"}` +
+      ` · blocked ${details.blocked_domains ?? 0}` +
+      ` · DoH ${details.doh_enabled ? "ON" : "OFF"}`
+    );
   }
 
-  const levels = [
-    firewallLevel,
-    idsLevel,
-    vpnLevel,
-    networkLevel,
-  ];
+  if (details.unit) {
+    return [
+      details.unit,
+      details.active_state,
+      details.sub_state,
+    ]
+      .filter(Boolean)
+      .join(" · ");
+  }
+
+  if (details.active_interface !== undefined) {
+    const tunnels = Array.isArray(details.tunnels)
+      ? details.tunnels.length
+      : 0;
+
+    return (
+      `active ${details.active_interface || "—"}` +
+      ` · туннелей ${tunnels}`
+    );
+  }
+
+  if (Array.isArray(details.interfaces)) {
+    return `интерфейсов ${details.interfaces.length}`;
+  }
+
+  if (details.active_entries !== undefined) {
+    return (
+      `активных записей ${details.active_entries}` +
+      ` · всего ${details.stored_entries ?? "—"}`
+    );
+  }
+
+  if (details.hostname) {
+    return `${details.hostname} · ${details.kernel || "Linux"}`;
+  }
+
+  if (details.path) {
+    return details.path;
+  }
+
+  return "Данные получены";
+}
+
+function drawDashboardComponent(name, component) {
+  const ids = {
+    system: [
+      "dashboard-system-health",
+      "dashboard-system-summary",
+      "dashboard-system-detail",
+    ],
+    network: [
+      "network-health",
+      "network-summary",
+      "network-detail",
+    ],
+    vpn: [
+      "overview-vpn-health",
+      "overview-vpn-summary",
+      "overview-vpn-detail",
+    ],
+    l2_vpn: [
+      "overview-l2-vpn-health",
+      "overview-l2-vpn-summary",
+      "overview-l2-vpn-detail",
+    ],
+    dhcp: [
+      "dhcp-health",
+      "dhcp-summary",
+      "dhcp-detail",
+    ],
+    firewall: [
+      "firewall-health",
+      "firewall-summary",
+      "firewall-detail",
+    ],
+    ids: [
+      "ids-health",
+      "ids-summary",
+      "ids-detail",
+    ],
+    suricata: [
+      "suricata-health",
+      "suricata-summary",
+      "suricata-detail",
+    ],
+    blacklist: [
+      "blacklist-health",
+      "blacklist-summary",
+      "blacklist-detail",
+    ],
+    content_filter: [
+      "content-filter-health",
+      "content-filter-summary",
+      "content-filter-detail",
+    ],
+  };
+
+  const target = ids[name];
+
+  if (!target) {
+    return;
+  }
+
+  const [statusId, summaryId, detailId] = target;
+  const status = component?.status || "unknown";
+
+  setComponentStatus(
+    statusId,
+    dashboardCssStatus(status),
+    dashboardStatusLabel(status),
+  );
+
+  byId(summaryId).textContent =
+    component?.message || "Состояние недоступно";
+
+  byId(detailId).textContent =
+    dashboardDetail(component);
+}
+
+function drawOverview(data) {
+  const components = data?.components || {};
+
+  for (const name of [
+    "system",
+    "network",
+    "vpn",
+    "l2_vpn",
+    "dhcp",
+    "firewall",
+    "ids",
+    "suricata",
+    "blacklist",
+    "content_filter",
+  ]) {
+    drawDashboardComponent(
+      name,
+      components[name],
+    );
+  }
 
   const global = byId("system-health");
 
-  if (levels.includes("critical")) {
-    global.className = "health-badge critical";
-    global.textContent = "● Требуется вмешательство";
-  } else if (levels.includes("warning")) {
-    global.className = "health-badge warning";
-    global.textContent = "● Требует внимания";
-  } else if (
-    levels.length &&
-    levels.every((level) => level === "healthy")
-  ) {
-    global.className = "health-badge healthy";
-    global.textContent = "● Система работает штатно";
+  const globalCss = dashboardCssStatus(
+    data?.status || "unknown",
+  );
+
+  global.className =
+    `health-badge ${globalCss}`;
+
+  if (data?.status === "ok") {
+    global.textContent =
+      "● Система работает штатно";
+  } else if (data?.status === "error") {
+    global.textContent =
+      "● Требуется вмешательство";
+  } else if (data?.status === "warning") {
+    global.textContent =
+      "● Требует внимания";
   } else {
-    global.className = "health-badge unknown";
-    global.textContent = "● Состояние определено не полностью";
+    global.textContent =
+      "● Состояние определено не полностью";
+  }
+
+  if (data?.updated_at) {
+    byId("observed").textContent =
+      `Dashboard обновлён ${
+        new Date(
+          data.updated_at
+        ).toLocaleString("ru-RU")
+      }`;
+  }
+
+  const titles = {
+    system: "System",
+    network: "Network",
+    vpn: "VPN",
+    l2_vpn: "L2 VPN",
+    dhcp: "DHCP",
+    firewall: "Firewall",
+    ids: "IDS",
+    suricata: "Suricata",
+    blacklist: "Blackhole",
+    content_filter: "Content Filter",
+  };
+
+  const attention = [];
+
+  for (
+    const [name, component]
+    of Object.entries(components)
+  ) {
+    if (
+      !component ||
+      component.status === "ok"
+    ) {
+      continue;
+    }
+
+    addAttention(
+      attention,
+      component.status === "error"
+        ? "critical"
+        : "warning",
+      titles[name] || name,
+      component.message ||
+        "Состояние компонента требует проверки",
+    );
   }
 
   drawAttention(attention);
@@ -600,6 +974,7 @@ function drawAttention(items) {
 async function refresh() {
   byId("refresh").disabled = true;
   const jobs = [
+    ["dashboard", "global-message", drawOverview],
     ["system", "global-message", drawSystem],
     ["network/status", "global-message", () => {}],
     ["network/interfaces", "network-error", drawInterfaces],
@@ -608,14 +983,11 @@ async function refresh() {
     ["vpn/status", "vpn-error", drawVpnStatus],
     ["vpn/events?limit=10", "vpn-error", drawVpnEvents],
   ];
-  const snapshot = {};
-
   await Promise.all(jobs.map(async ([path, errorId, draw]) => {
     byId(errorId).textContent = "";
 
     try {
       const data = await api(path);
-      snapshot[path] = data;
       draw(data);
     } catch (error) {
       byId(errorId).textContent =
@@ -625,7 +997,6 @@ async function refresh() {
     }
   }));
 
-  drawOverview(snapshot);
   byId("refresh").disabled = false;
 }
 
@@ -679,6 +1050,7 @@ byId("config-editor").addEventListener("input", () => {
   byId("config-message").className = "";
 });
 refresh();
+window.setInterval(refresh, 10000);
 
 /* SECBOX VPN CONFIGURATION UI START */
 (() => {
@@ -688,6 +1060,7 @@ refresh();
   const VALIDATE_API = "/api/v1/vpn/config/validate";
 
   let vpnConfig = null;
+let vpnPersistedConfig = null;
 
   function esc(value) {
     return String(value ?? "")
@@ -1048,30 +1421,51 @@ refresh();
     `;
   }
 
-  function ensurePanel() {
-    let panel = document.getElementById("vpn-configuration-panel");
+  function ensurePanel(id, page) {
+    let panel = document.getElementById(id);
 
     if (panel) {
+      panel.dataset.secboxPage = page;
       return panel;
     }
 
     panel = document.createElement("section");
-    panel.id = "vpn-configuration-panel";
+    panel.id = id;
     panel.className = "panel vpn-config-panel";
+    panel.dataset.secboxPage = page;
 
-    const vpnSection = document.getElementById("vpn");
-
-    if (vpnSection) {
-      vpnSection.insertAdjacentElement("afterend", panel);
-    } else {
-      document.querySelector("main")?.appendChild(panel);
-    }
+    document.querySelector("main")?.appendChild(panel);
 
     return panel;
   }
 
+  function ensurePanels() {
+    return {
+      l3: ensurePanel(
+        "vpn-configuration-l3-panel",
+        "manage-vpn-l3"
+      ),
+      l2: ensurePanel(
+        "vpn-configuration-l2-panel",
+        "manage-vpn-l2"
+      ),
+    };
+  }
+
+  function activePanel() {
+    return secboxCurrentPath() === "/manage/vpn/l2"
+      ? document.getElementById("vpn-configuration-l2-panel")
+      : document.getElementById("vpn-configuration-l3-panel");
+  }
+
   function message(text, type = "info") {
-    const node = document.getElementById("vpn-config-message");
+    const panel = activePanel();
+
+    if (!panel) {
+      return;
+    }
+
+    const node = panel.querySelector(".vpn-config-message");
 
     if (!node) {
       return;
@@ -1079,42 +1473,65 @@ refresh();
 
     node.className =
       `vpn-config-message vpn-config-message-${type}`;
+
     node.textContent = text;
   }
 
-  function render() {
-    const panel = ensurePanel();
+  function toolbar(mode) {
+    return `
+      <div
+        class="vpn-config-message vpn-config-message-info"
+        role="status"
+        aria-live="polite"
+      >Configuration loaded.</div>
 
-    if (!vpnConfig) {
-      panel.innerHTML = `
-        <div class="vpn-config-heading">
-          <div>
-            <p class="eyebrow">Настройки</p>
-            <h2>VPN Configuration</h2>
-            <p>Загрузка текущей VPN-конфигурации…</p>
-          </div>
+      <div class="vpn-config-toolbar">
+        <div class="vpn-config-security-note">
+          Private keys не читаются браузером:
+          UI работает только с путями к key files.
         </div>
-      `;
-      return;
-    }
 
-    vpnConfig.tunnels ??= [];
-    vpnConfig.l2_tunnels ??= [];
+        <div class="vpn-config-toolbar-right">
+          <button
+            type="button"
+            data-vpn-action="reload"
+            data-vpn-mode="${mode}"
+            class="vpn-config-secondary"
+          >Reload</button>
 
+          <button
+            type="button"
+            data-vpn-action="validate"
+            data-vpn-mode="${mode}"
+            class="vpn-config-secondary"
+          >Validate</button>
+
+          <button
+            type="button"
+            data-vpn-action="apply"
+            data-vpn-mode="${mode}"
+            class="vpn-config-primary"
+          >Apply changes</button>
+        </div>
+      </div>
+    `;
+  }
+
+  function renderL3(panel) {
     panel.innerHTML = `
       <div class="vpn-config-heading">
         <div>
           <p class="eyebrow">Управление VPN</p>
-          <h2>VPN Configuration</h2>
+          <h2>L3 VPN</h2>
           <p>
-            Управление отказоустойчивым L3 WireGuard pool и
-            Ethernet-over-WireGuard L2 overlays.
+            Маршрутизируемые WireGuard-туннели с priority,
+            routing table и health-check.
           </p>
         </div>
 
         <label class="vpn-config-master-enabled">
           <input
-            id="vpn-config-master-enabled"
+            data-vpn-master-enabled
             type="checkbox"
             ${vpnConfig.enabled ? "checked" : ""}
           >
@@ -1122,16 +1539,18 @@ refresh();
         </label>
       </div>
 
-
       <div class="vpn-config-section-heading">
         <div>
           <h3>L3 VPN Pool</h3>
           <p>
-            Маршрутизируемые WireGuard-туннели с priority,
-            routing table и health-check.
+            Пул маршрутизируемых WireGuard-туннелей,
+            переключение и контроль доступности.
           </p>
         </div>
-        <span class="tag">${vpnConfig.tunnels.length} tunnel(s)</span>
+
+        <span class="tag">
+          ${vpnConfig.tunnels.length} tunnel(s)
+        </span>
       </div>
 
       <div id="vpn-config-tunnels">
@@ -1144,7 +1563,31 @@ refresh();
         class="vpn-config-secondary"
       >+ Add L3 tunnel</button>
 
-      <div class="vpn-config-divider"></div>
+      ${toolbar("l3")}
+    `;
+  }
+
+  function renderL2(panel) {
+    panel.innerHTML = `
+      <div class="vpn-config-heading">
+        <div>
+          <p class="eyebrow">Управление VPN</p>
+          <h2>L2 VPN</h2>
+          <p>
+            Ethernet-over-WireGuard:
+            bridge → GRETAP → WireGuard.
+          </p>
+        </div>
+
+        <label class="vpn-config-master-enabled">
+          <input
+            data-vpn-master-enabled
+            type="checkbox"
+            ${vpnConfig.enabled ? "checked" : ""}
+          >
+          VPN enabled
+        </label>
+      </div>
 
       <div class="vpn-config-section-heading">
         <div>
@@ -1154,7 +1597,10 @@ refresh();
             Поддерживает broadcast/ARP/DHCP и перенос 802.1Q frames.
           </p>
         </div>
-        <span class="tag">${vpnConfig.l2_tunnels.length} overlay(s)</span>
+
+        <span class="tag">
+          ${vpnConfig.l2_tunnels.length} overlay(s)
+        </span>
       </div>
 
       <div id="vpn-config-l2-tunnels">
@@ -1171,42 +1617,37 @@ refresh();
         class="vpn-config-secondary"
       >+ Add L2 overlay</button>
 
-      <div
-        id="vpn-config-message"
-        class="vpn-config-message vpn-config-message-info"
-        role="status"
-        aria-live="polite"
-      >Configuration loaded.</div>
-
-      <div class="vpn-config-toolbar">
-        <div class="vpn-config-security-note">
-          Private keys не читаются браузером:
-          UI работает только с путями к key files.
-        </div>
-
-        <div class="vpn-config-toolbar-right">
-          <button
-            type="button"
-            id="vpn-config-reload"
-            class="vpn-config-secondary"
-          >Reload</button>
-
-          <button
-            type="button"
-            id="vpn-config-validate"
-            class="vpn-config-secondary"
-          >Validate</button>
-
-          <button
-            type="button"
-            id="vpn-config-apply"
-            class="vpn-config-primary"
-          >Apply changes</button>
-        </div>
-      </div>
+      ${toolbar("l2")}
     `;
+  }
+
+  function render() {
+    const panels = ensurePanels();
+
+    if (!vpnConfig) {
+      for (const [mode, panel] of Object.entries(panels)) {
+        panel.innerHTML = `
+          <div class="vpn-config-heading">
+            <div>
+              <p class="eyebrow">Настройки</p>
+              <h2>${mode === "l2" ? "L2 VPN" : "L3 VPN"}</h2>
+              <p>Загрузка текущей VPN-конфигурации…</p>
+            </div>
+          </div>
+        `;
+      }
+
+      return;
+    }
+
+    vpnConfig.tunnels ??= [];
+    vpnConfig.l2_tunnels ??= [];
+
+    renderL3(panels.l3);
+    renderL2(panels.l2);
 
     bind();
+    secboxActivatePage();
   }
 
   function setPath(object, path, value) {
@@ -1261,47 +1702,130 @@ refresh();
       });
   }
 
-  function readForm() {
-    const next = structuredClone(vpnConfig);
+  function activeMode() {
+    return secboxCurrentPath() === "/manage/vpn/l2"
+      ? "l2"
+      : "l3";
+  }
 
-    next.enabled =
-      document.getElementById("vpn-config-master-enabled")
-        ?.checked ?? false;
 
-    document
-      .querySelectorAll("[data-vpn-tunnel]")
-      .forEach((card) => {
-        const index = Number(card.dataset.vpnTunnel);
-        readInputs(
-          card,
-          "data-vpn-field",
-          next.tunnels[index]
-        );
-      });
+  function panelForMode(mode) {
+    return document.getElementById(
+      mode === "l2"
+        ? "vpn-configuration-l2-panel"
+        : "vpn-configuration-l3-panel"
+    );
+  }
 
-    document
-      .querySelectorAll("[data-vpn-l2-tunnel]")
-      .forEach((card) => {
-        const index = Number(card.dataset.vpnL2Tunnel);
-        readInputs(
-          card,
-          "data-vpn-l2-field",
-          next.l2_tunnels[index]
-        );
 
-        /*
-         * Ordinary text/number L2 fields use data-vpn-field so field()
-         * can be shared by L3 and L2 cards.
-         */
-        readInputs(
-          card,
-          "data-vpn-field",
-          next.l2_tunnels[index]
-        );
-      });
+  function readForm(mode = activeMode()) {
+    if (!vpnConfig) {
+      throw new Error(
+        "VPN configuration is not loaded"
+      );
+    }
+
+    /*
+     * Start from the last configuration actually loaded
+     * from SecBox.
+     *
+     * This guarantees:
+     *
+     * Apply L3 -> keeps persisted L2 untouched.
+     * Apply L2 -> keeps persisted L3 untouched.
+     */
+    const baseline =
+      vpnPersistedConfig || vpnConfig;
+
+    const next = structuredClone(baseline);
+    const panel = panelForMode(mode);
+
+    if (!panel) {
+      throw new Error(
+        `VPN ${mode.toUpperCase()} editor is unavailable`
+      );
+    }
+
+    const master =
+      panel.querySelector(
+        "[data-vpn-master-enabled]"
+      );
+
+    if (master) {
+      next.enabled = master.checked;
+    }
+
+    if (mode === "l3") {
+      const tunnels = structuredClone(
+        vpnConfig.tunnels || []
+      );
+
+      panel
+        .querySelectorAll("[data-vpn-tunnel]")
+        .forEach((card) => {
+          const index =
+            Number(card.dataset.vpnTunnel);
+
+          if (!tunnels[index]) {
+            throw new Error(
+              `Invalid L3 tunnel index ${index}`
+            );
+          }
+
+          readInputs(
+            card,
+            "data-vpn-field",
+            tunnels[index]
+          );
+        });
+
+      next.tunnels = tunnels;
+
+    } else {
+      const tunnels = structuredClone(
+        vpnConfig.l2_tunnels || []
+      );
+
+      panel
+        .querySelectorAll(
+          "[data-vpn-l2-tunnel]"
+        )
+        .forEach((card) => {
+          const index =
+            Number(card.dataset.vpnL2Tunnel);
+
+          if (!tunnels[index]) {
+            throw new Error(
+              `Invalid L2 tunnel index ${index}`
+            );
+          }
+
+          /*
+           * Enabled has a dedicated L2 attribute.
+           */
+          readInputs(
+            card,
+            "data-vpn-l2-field",
+            tunnels[index]
+          );
+
+          /*
+           * Ordinary L2 fields use data-vpn-field so the
+           * common field() renderer remains reusable.
+           */
+          readInputs(
+            card,
+            "data-vpn-field",
+            tunnels[index]
+          );
+        });
+
+      next.l2_tunnels = tunnels;
+    }
 
     return next;
   }
+
 
   async function configApi(url, options = {}) {
     const response = await fetch(url, {
@@ -1346,51 +1870,131 @@ refresh();
   }
 
   async function load() {
+    console.log("[SecBox VPN] load() started");
+
+    const controller = new AbortController();
+
+    const timeout = window.setTimeout(
+      () => controller.abort(),
+      10000
+    );
+
     try {
       message("Loading configuration...");
 
-      const body = await configApi(API);
+      console.log(
+        "[SecBox VPN] requesting",
+        API
+      );
+
+      const body = await configApi(API, {
+        signal: controller.signal,
+      });
+
+      console.log(
+        "[SecBox VPN] response received",
+        body
+      );
+
+      if (!body || !body.vpn) {
+        throw new Error(
+          "VPN API returned no vpn object"
+        );
+      }
 
       vpnConfig = body.vpn;
+
       vpnConfig.tunnels ??= [];
       vpnConfig.l2_tunnels ??= [];
 
+      /*
+       * Immutable baseline for editor isolation.
+       * Hidden unsaved editor state must never leak into
+       * Apply of the other VPN type.
+       */
+      vpnPersistedConfig =
+        structuredClone(vpnConfig);
+
+      console.log(
+        "[SecBox VPN] config loaded",
+        {
+          l3: vpnConfig.tunnels.length,
+          l2: vpnConfig.l2_tunnels.length,
+        }
+      );
+
       render();
-      message("Configuration loaded.", "success");
+
+      message(
+        "Configuration loaded.",
+        "success"
+      );
+
     } catch (error) {
-      const panel = ensurePanel();
+      console.error(
+        "[SecBox VPN] load failed",
+        error
+      );
+
+      const panel =
+        activePanel()
+        || ensurePanels().l3;
+
+      const text =
+        error?.name === "AbortError"
+          ? "VPN API request timed out after 10 seconds"
+          : (
+              error?.message
+              || String(error)
+            );
 
       panel.innerHTML = `
         <div class="vpn-config-heading">
           <div>
+            <p class="eyebrow">Ошибка</p>
             <h2>VPN Configuration</h2>
-            <p>Configuration could not be loaded.</p>
+            <p>
+              Configuration could not be loaded.
+            </p>
           </div>
         </div>
 
-        <div class="vpn-config-message vpn-config-message-error">
-          ${esc(error.message)}
+        <div
+          class="vpn-config-message vpn-config-message-error"
+        >
+          ${esc(text)}
         </div>
 
         <button
           type="button"
           id="vpn-config-retry"
           class="vpn-config-secondary"
-        >Retry</button>
+        >
+          Retry
+        </button>
       `;
 
       document
         .getElementById("vpn-config-retry")
-        ?.addEventListener("click", load);
+        ?.addEventListener(
+          "click",
+          load
+        );
+
+    } finally {
+      window.clearTimeout(timeout);
     }
   }
 
   async function validate() {
     const button =
-      document.getElementById("vpn-config-validate");
+      activePanel()?.querySelector('[data-vpn-action="validate"]');
 
     try {
-      const candidate = readForm();
+      const mode =
+        button?.dataset.vpnMode || activeMode();
+
+      const candidate = readForm(mode);
 
       if (button) {
         button.disabled = true;
@@ -1433,10 +2037,13 @@ refresh();
 
   async function apply() {
     const button =
-      document.getElementById("vpn-config-apply");
+      activePanel()?.querySelector('[data-vpn-action="apply"]');
 
     try {
-      const candidate = readForm();
+      const mode =
+        button?.dataset.vpnMode || activeMode();
+
+      const candidate = readForm(mode);
 
       if (!window.confirm(
         "Apply VPN configuration? Active network paths may change."
@@ -1456,6 +2063,17 @@ refresh();
           vpn: candidate,
         }),
       });
+
+      /*
+       * The server accepted this complete candidate.
+       * Make it the new baseline immediately; load() below
+       * will then refresh it from the authoritative config.
+       */
+      vpnPersistedConfig =
+        structuredClone(candidate);
+
+      vpnConfig =
+        structuredClone(candidate);
 
       const l2Result =
         body.applied_l2_tunnels === undefined
@@ -1489,7 +2107,7 @@ refresh();
     document
       .getElementById("vpn-config-add")
       ?.addEventListener("click", () => {
-        vpnConfig = readForm();
+        vpnConfig = readForm("l3");
         vpnConfig.tunnels ??= [];
 
         vpnConfig.tunnels.push(
@@ -1506,7 +2124,7 @@ refresh();
     document
       .getElementById("vpn-config-add-l2")
       ?.addEventListener("click", () => {
-        vpnConfig = readForm();
+        vpnConfig = readForm("l2");
         vpnConfig.l2_tunnels ??= [];
 
         vpnConfig.l2_tunnels.push(
@@ -1525,7 +2143,7 @@ refresh();
       .forEach((button) => {
         button.addEventListener("click", () => {
           const index = Number(button.dataset.vpnRemove);
-          const current = readForm();
+          const current = readForm("l3");
 
           current.tunnels.splice(index, 1);
           vpnConfig = current;
@@ -1543,7 +2161,7 @@ refresh();
       .forEach((button) => {
         button.addEventListener("click", () => {
           const index = Number(button.dataset.vpnL2Remove);
-          const current = readForm();
+          const current = readForm("l2");
 
           current.l2_tunnels.splice(index, 1);
           vpnConfig = current;
@@ -1557,20 +2175,41 @@ refresh();
       });
 
     document
-      .getElementById("vpn-config-reload")
-      ?.addEventListener("click", load);
+      .querySelectorAll('[data-vpn-action="reload"]')
+      .forEach((button) => {
+        button.addEventListener("click", load);
+      });
 
     document
-      .getElementById("vpn-config-validate")
-      ?.addEventListener("click", validate);
+      .querySelectorAll('[data-vpn-action="validate"]')
+      .forEach((button) => {
+        button.addEventListener("click", validate);
+      });
 
     document
-      .getElementById("vpn-config-apply")
-      ?.addEventListener("click", apply);
+      .querySelectorAll('[data-vpn-action="apply"]')
+      .forEach((button) => {
+        button.addEventListener("click", apply);
+      });
+
+    document
+      .querySelectorAll("[data-vpn-master-enabled]")
+      .forEach((checkbox) => {
+        checkbox.addEventListener("change", () => {
+          vpnConfig.enabled = checkbox.checked;
+
+          document
+            .querySelectorAll("[data-vpn-master-enabled]")
+            .forEach((other) => {
+              other.checked = checkbox.checked;
+            });
+        });
+      });
   }
 
+
   function boot() {
-    ensurePanel();
+    ensurePanels();
     render();
     load();
   }
@@ -1581,7 +2220,7 @@ refresh();
       boot
     );
   } else {
-    boot();
+    window.setTimeout(boot, 0);
   }
 })();
  /* SECBOX VPN CONFIGURATION UI END */
@@ -1594,9 +2233,12 @@ refresh();
 let networkDhcpState = null;
 
 
-function networkConfigMessage(message, type = "info") {
+function networkConfigMessage(message, type = "info", target = null) {
     const element = document.getElementById(
-        "network-config-message"
+        target ||
+        (secboxCurrentPath() === "/manage/network/dhcp"
+            ? "dhcp-config-message"
+            : "network-interface-message")
     );
 
     if (!element) {
@@ -1837,31 +2479,28 @@ function renderNetworkDhcpConfig() {
         return;
     }
 
-    const interfaceList = document.getElementById(
-        "network-interface-list"
-    );
+    const interfaceList =
+        document.getElementById("network-interface-list");
 
-    const dhcpList = document.getElementById(
-        "dhcp-scope-list"
-    );
+    const dhcpList =
+        document.getElementById("dhcp-scope-list");
 
-    if (!interfaceList || !dhcpList) {
-        return;
+    if (interfaceList) {
+        interfaceList.innerHTML =
+            networkDhcpState.network.interfaces
+                .map(networkInterfaceCard)
+                .join("");
     }
 
-    interfaceList.innerHTML =
-        networkDhcpState.network.interfaces
-            .map(networkInterfaceCard)
-            .join("");
-
-    dhcpList.innerHTML =
-        networkDhcpState.dhcp
-            .map(dhcpScopeCard)
-            .join("");
+    if (dhcpList) {
+        dhcpList.innerHTML =
+            networkDhcpState.dhcp
+                .map(dhcpScopeCard)
+                .join("");
+    }
 
     bindNetworkEditorEvents();
 }
-
 
 function bindNetworkEditorEvents() {
     document
@@ -1912,103 +2551,107 @@ function bindNetworkEditorEvents() {
 
 function readNetworkDhcpForm() {
     if (!networkDhcpState) {
-        throw new Error(
-            "Конфигурация сети ещё не загружена"
-        );
+        throw new Error("Конфигурация сети ещё не загружена");
     }
 
-    const interfaces = Array.from(
-        document.querySelectorAll(
-            ".network-card"
-        )
-    ).map(card => {
-        const original =
-            networkDhcpState.network.interfaces[
-                Number(card.dataset.networkIndex)
-            ];
+    let interfaces = structuredClone(
+        networkDhcpState.network.interfaces
+    );
 
-        const roleElement = card.querySelector(
-            ".network-role"
-        );
+    const interfaceCards = Array.from(
+        document.querySelectorAll(".network-card")
+    );
 
-        const method = card.querySelector(
-            ".network-ipv4-method"
-        ).value;
+    if (interfaceCards.length) {
+        interfaces = interfaceCards.map(card => {
+            const original =
+                networkDhcpState.network.interfaces[
+                    Number(card.dataset.networkIndex)
+                ];
 
-        const address = card.querySelector(
-            ".network-ipv4-address"
-        ).value.trim();
+            const roleElement =
+                card.querySelector(".network-role");
 
-        const routingRaw = card.querySelector(
-            ".network-routing-table"
-        ).value.trim();
+            const method =
+                card.querySelector(".network-ipv4-method").value;
 
-        return {
-            name: original.name,
+            const address =
+                card.querySelector(".network-ipv4-address")
+                    .value.trim();
 
-            // Disabled role controls retain their original value.
-            role: roleElement.disabled
-                ? original.role
-                : roleElement.value,
+            const routingRaw =
+                card.querySelector(".network-routing-table")
+                    .value.trim();
 
-            ipv4_method: method,
+            return {
+                name: original.name,
 
-            ipv4_address:
-                method === "static"
-                    ? address
-                    : null,
+                role: roleElement.disabled
+                    ? original.role
+                    : roleElement.value,
 
-            routing_table:
-                routingRaw === ""
-                    ? null
-                    : Number(routingRaw),
-        };
-    });
+                ipv4_method: method,
 
-    const dhcp = Array.from(
-        document.querySelectorAll(
-            ".dhcp-card"
-        )
-    ).map(card => {
-        const dns = card.querySelector(
-            ".dhcp-dns"
-        ).value
-            .split(",")
-            .map(value => value.trim())
-            .filter(Boolean);
+                ipv4_address:
+                    method === "static"
+                        ? address
+                        : null,
 
-        return {
-            enabled: card.querySelector(
-                ".dhcp-enabled"
-            ).checked,
+                routing_table:
+                    routingRaw === ""
+                        ? null
+                        : Number(routingRaw),
+            };
+        });
+    }
 
-            interface: card.querySelector(
-                ".dhcp-interface"
-            ).value.trim(),
+    let dhcp = structuredClone(networkDhcpState.dhcp);
 
-            network: card.querySelector(
-                ".dhcp-network"
-            ).value.trim(),
+    const dhcpCards = Array.from(
+        document.querySelectorAll(".dhcp-card")
+    );
 
-            range_start: card.querySelector(
-                ".dhcp-range-start"
-            ).value.trim(),
+    if (dhcpCards.length) {
+        dhcp = dhcpCards.map(card => {
+            const dns =
+                card.querySelector(".dhcp-dns")
+                    .value
+                    .split(",")
+                    .map(value => value.trim())
+                    .filter(Boolean);
 
-            range_end: card.querySelector(
-                ".dhcp-range-end"
-            ).value.trim(),
+            return {
+                enabled:
+                    card.querySelector(".dhcp-enabled").checked,
 
-            gateway: card.querySelector(
-                ".dhcp-gateway"
-            ).value.trim(),
+                interface:
+                    card.querySelector(".dhcp-interface")
+                        .value.trim(),
 
-            dns_servers: dns,
+                network:
+                    card.querySelector(".dhcp-network")
+                        .value.trim(),
 
-            lease_time: card.querySelector(
-                ".dhcp-lease-time"
-            ).value.trim(),
-        };
-    });
+                range_start:
+                    card.querySelector(".dhcp-range-start")
+                        .value.trim(),
+
+                range_end:
+                    card.querySelector(".dhcp-range-end")
+                        .value.trim(),
+
+                gateway:
+                    card.querySelector(".dhcp-gateway")
+                        .value.trim(),
+
+                dns_servers: dns,
+
+                lease_time:
+                    card.querySelector(".dhcp-lease-time")
+                        .value.trim(),
+            };
+        });
+    }
 
     return {
         network: {
@@ -2020,7 +2663,6 @@ function readNetworkDhcpForm() {
         dhcp,
     };
 }
-
 
 async function networkApiRequest(
     path,
@@ -2214,11 +2856,13 @@ function addDhcpScope() {
 
 
 function initializeNetworkDhcpEditor() {
-    const root = document.getElementById(
-        "network-config-editor"
-    );
+    const interfacePage =
+        document.getElementById("network-interfaces-page");
 
-    if (!root) {
+    const dhcpPage =
+        document.getElementById("network-dhcp-page");
+
+    if (!interfacePage && !dhcpPage) {
         return;
     }
 
@@ -2230,14 +2874,35 @@ function initializeNetworkDhcpEditor() {
         );
 
     document
-        .getElementById("network-config-validate")
+        .getElementById("dhcp-config-reload")
+        ?.addEventListener(
+            "click",
+            loadNetworkDhcpConfig
+        );
+
+    document
+        .getElementById("network-interface-validate")
         ?.addEventListener(
             "click",
             validateNetworkDhcpConfig
         );
 
     document
-        .getElementById("network-config-apply")
+        .getElementById("network-interface-apply")
+        ?.addEventListener(
+            "click",
+            applyNetworkDhcpConfig
+        );
+
+    document
+        .getElementById("dhcp-config-validate")
+        ?.addEventListener(
+            "click",
+            validateNetworkDhcpConfig
+        );
+
+    document
+        .getElementById("dhcp-config-apply")
         ?.addEventListener(
             "click",
             applyNetworkDhcpConfig
@@ -2253,12 +2918,2940 @@ function initializeNetworkDhcpEditor() {
     loadNetworkDhcpConfig();
 }
 
-
 if (document.readyState === "loading") {
     document.addEventListener(
         "DOMContentLoaded",
         initializeNetworkDhcpEditor
     );
 } else {
-    initializeNetworkDhcpEditor();
+  window.setTimeout(
+    initializeNetworkDhcpEditor,
+    0
+  );
 }
+
+
+
+// ============================================================
+// SecBox Navigation v2
+// ============================================================
+
+const SECBOX_ROUTES = {
+  "/": {
+    page: "overview",
+    title: "Обзор",
+    section: "Мониторинг",
+    subtitle: "Состояние системы",
+  },
+
+  "/monitoring/network": {
+    page: "monitor-network",
+    title: "Сеть",
+    section: "Мониторинг",
+    subtitle: "Интерфейсы и маршрутизация",
+  },
+
+  "/monitoring/vpn/l3": {
+    page: "monitor-vpn-l3",
+    title: "L3 VPN",
+    section: "Мониторинг / VPN",
+    subtitle: "Состояние маршрутизируемых WireGuard-туннелей",
+  },
+
+  "/monitoring/vpn/l2": {
+    page: "monitor-vpn-l2",
+    title: "L2 VPN",
+    section: "Мониторинг / VPN",
+    subtitle: "WireGuard transport, GRETAP и Ethernet bridge",
+  },
+
+  "/monitoring/firewall": {
+    page: "monitor-firewall",
+    title: "Firewall",
+    section: "Мониторинг",
+    subtitle: "Состояние сетевой фильтрации",
+  },
+
+  "/monitoring/ids": {
+    page: "monitor-ids",
+    title: "IDS / IPS",
+    section: "Мониторинг",
+    subtitle: "Состояние системы обнаружения угроз",
+  },
+
+  "/monitoring/blackhole": {
+    page: "monitor-blackhole",
+    title: "Blackhole",
+    section: "Мониторинг",
+    subtitle: "Динамические блокировки",
+  },
+
+  "/monitoring/content-filter": {
+    page: "monitor-content-filter",
+    title: "Content Filter",
+    section: "Мониторинг",
+    subtitle: "Состояние контентной фильтрации",
+  },
+
+  "/monitoring/services": {
+    page: "monitor-services",
+    title: "Службы",
+    section: "Мониторинг",
+    subtitle: "Состояние системных служб",
+  },
+
+  "/monitoring/system": {
+    page: "monitor-system",
+    title: "Система",
+    section: "Мониторинг",
+    subtitle: "Состояние SecBox",
+  },
+
+  "/manage/network/interfaces": {
+    page: "manage-network",
+    title: "Интерфейсы",
+    section: "Управление / Сеть",
+    subtitle: "Конфигурация сетевых интерфейсов",
+  },
+
+  "/manage/network/dhcp": {
+    page: "manage-network",
+    title: "DHCP / DNS",
+    section: "Управление / Сеть",
+    subtitle: "Адресация клиентских сетей",
+  },
+
+  "/manage/vpn/l3": {
+    page: "manage-vpn",
+    title: "L3 VPN",
+    section: "Управление / VPN",
+    subtitle: "Маршрутизируемые VPN-туннели",
+  },
+
+  "/manage/vpn/l2": {
+    page: "manage-vpn",
+    title: "L2 VPN",
+    section: "Управление / VPN",
+    subtitle: "Ethernet over WireGuard",
+  },
+
+  "/manage/firewall": {
+    page: "manage-firewall",
+    title: "Firewall",
+    section: "Управление",
+    subtitle: "Политики, правила и NAT",
+  },
+
+  "/manage/ids": {
+    page: "manage-ids",
+    title: "IDS / IPS",
+    section: "Управление",
+    subtitle: "Сигнатуры и режимы защиты",
+  },
+
+  "/manage/blackhole": {
+    page: "manage-blackhole",
+    title: "Blackhole",
+    section: "Управление",
+    subtitle: "Управление динамическими блокировками",
+  },
+
+  "/manage/content-filter": {
+    page: "manage-content-filter",
+    title: "Content Filter",
+    section: "Управление",
+    subtitle: "Политики контентной фильтрации",
+  },
+
+  "/manage/services": {
+    page: "manage-services",
+    title: "Службы",
+    section: "Управление",
+    subtitle: "Управление службами SecBox",
+  },
+
+  "/manage/system": {
+    page: "manage-system",
+    title: "Система",
+    section: "Управление",
+    subtitle: "Системные настройки SecBox",
+  },
+};
+
+
+// Backward-compatible routes.
+const SECBOX_ROUTE_ALIASES = {
+  "/monitoring/vpn": "/monitoring/vpn/l3",
+  "/network": "/monitoring/network",
+  "/dhcp": "/manage/network/dhcp",
+  "/vpn": "/monitoring/vpn/l3",
+  "/firewall": "/monitoring/firewall",
+  "/ids": "/monitoring/ids",
+  "/blackhole": "/monitoring/blackhole",
+  "/content-filter": "/monitoring/content-filter",
+  "/system": "/monitoring/system",
+};
+
+
+function secboxCurrentPath() {
+  let path = window.location.pathname.replace(/\/+$/, "");
+
+  if (!path) {
+    path = "/";
+  }
+
+  return SECBOX_ROUTE_ALIASES[path] || path;
+}
+
+
+function secboxRoute() {
+  return SECBOX_ROUTES[secboxCurrentPath()] || SECBOX_ROUTES["/"];
+}
+
+
+function secboxCreatePlaceholder(page, title, description) {
+  const section = document.createElement("section");
+
+  section.className = "panel secbox-placeholder";
+  section.dataset.secboxPage = page;
+
+  section.innerHTML = `
+    <div class="section-heading">
+      <div>
+        <p class="eyebrow">SecBox module</p>
+        <h2>${title}</h2>
+      </div>
+      <span class="tag">В разработке</span>
+    </div>
+
+    <p class="placeholder-description">${description}</p>
+
+    <div class="placeholder-grid">
+      <article>
+        <strong>Рабочая область подготовлена</strong>
+        <span>
+          Раздел отделён от остальных функций SecBox.
+        </span>
+      </article>
+
+      <article>
+        <strong>API подключается отдельно</strong>
+        <span>
+          Модуль можно развивать независимо от Overview.
+        </span>
+      </article>
+    </div>
+  `;
+
+  return section;
+}
+
+
+
+function cfLines(value) {
+  return String(value || "")
+    .split(/[\n,]+/)
+    .map((item) => item.trim())
+    .filter(Boolean);
+}
+
+
+async function cfRequest(url, options = {}) {
+  const response = await fetch(url, {
+    credentials: "same-origin",
+    ...options,
+  });
+
+  let data = null;
+
+  try {
+    data = await response.json();
+  } catch (_) {
+    data = null;
+  }
+
+  if (!response.ok) {
+    const detail = data?.detail || `HTTP ${response.status}`;
+    throw new Error(detail);
+  }
+
+  return data;
+}
+
+
+function secboxCreateContentFilterPages() {
+  const main = document.getElementById("app-main");
+
+  if (!main) return;
+
+  if (!main.querySelector('[data-secbox-page="monitor-content-filter"]')) {
+    const monitor = document.createElement("section");
+
+    monitor.className = "panel cf-page";
+    monitor.dataset.secboxPage = "monitor-content-filter";
+
+    monitor.innerHTML = `
+      <div class="section-heading">
+        <div>
+          <p class="eyebrow">Контентная фильтрация</p>
+          <h2>Content Filter</h2>
+        </div>
+        <button id="cf-monitor-refresh" type="button">Обновить</button>
+      </div>
+
+      <p id="cf-monitor-message" class="hint">Загрузка состояния…</p>
+
+      <div class="cf-status-grid">
+        <article>
+          <span>Состояние</span>
+          <strong id="cf-monitor-status">—</strong>
+        </article>
+        <article>
+          <span>DNS</span>
+          <strong id="cf-monitor-dns">—</strong>
+        </article>
+        <article>
+          <span>Заблокировано доменов</span>
+          <strong id="cf-monitor-blocked">—</strong>
+        </article>
+        <article>
+          <span>Managed DoH адресов</span>
+          <strong id="cf-monitor-doh-count">—</strong>
+        </article>
+      </div>
+
+      <div class="cf-details">
+        <div><span>Listen interface</span><strong id="cf-monitor-iface">—</strong></div>
+        <div><span>Listen address</span><strong id="cf-monitor-address">—</strong></div>
+        <div><span>DoT blocking</span><strong id="cf-monitor-dot">—</strong></div>
+        <div><span>DoQ blocking</span><strong id="cf-monitor-doq">—</strong></div>
+        <div><span>DoH blocking</span><strong id="cf-monitor-doh">—</strong></div>
+        <div><span>Managed feed</span><strong id="cf-monitor-feed">—</strong></div>
+        <div><span>Последнее обновление</span><strong id="cf-monitor-updated">—</strong></div>
+      </div>
+    `;
+
+    main.append(monitor);
+  }
+
+  if (!main.querySelector('[data-secbox-page="manage-content-filter"]')) {
+    const manage = document.createElement("section");
+
+    manage.className = "panel cf-page";
+    manage.dataset.secboxPage = "manage-content-filter";
+
+    manage.innerHTML = `
+      <div class="section-heading">
+        <div>
+          <p class="eyebrow">Управление</p>
+          <h2>Content Filter</h2>
+        </div>
+        <span id="cf-config-state" class="tag">Загрузка…</span>
+      </div>
+
+      <form id="cf-form">
+        <div class="cf-form-grid">
+          <label class="cf-check">
+            <input id="cf-enabled" type="checkbox">
+            <span>Content Filter включён</span>
+          </label>
+
+          <label class="cf-check">
+            <input id="cf-dns-enabled" type="checkbox">
+            <span>DNS filtering включён</span>
+          </label>
+
+          <label>
+            <span>LAN interface</span>
+            <input id="cf-listen-interface" type="text" required>
+          </label>
+
+          <label>
+            <span>Listen IPv4</span>
+            <input id="cf-listen-address" type="text" required>
+          </label>
+
+          <label class="cf-wide">
+            <span>Upstream DNS</span>
+            <textarea id="cf-upstreams" rows="3"
+              placeholder="1.1.1.1&#10;8.8.8.8"></textarea>
+          </label>
+
+          <label class="cf-wide">
+            <span>Заблокированные домены</span>
+            <textarea id="cf-blocked" rows="7"
+              placeholder="example.com&#10;ads.example.net"></textarea>
+          </label>
+        </div>
+
+        <h3 class="cf-subtitle">Encrypted DNS</h3>
+
+        <div class="cf-form-grid">
+          <label class="cf-check">
+            <input id="cf-block-dot" type="checkbox">
+            <span>Блокировать DNS-over-TLS</span>
+          </label>
+
+          <label class="cf-check">
+            <input id="cf-block-doq" type="checkbox">
+            <span>Блокировать DNS-over-QUIC</span>
+          </label>
+
+          <label class="cf-check">
+            <input id="cf-doh-enabled" type="checkbox">
+            <span>Блокировать DNS-over-HTTPS</span>
+          </label>
+
+          <label class="cf-check">
+            <input id="cf-logging" type="checkbox">
+            <span>Logging включён</span>
+          </label>
+
+          <label class="cf-wide">
+            <span>Статические DoH resolver IPv4</span>
+            <textarea id="cf-doh-resolvers" rows="3"></textarea>
+          </label>
+        </div>
+
+        <h3 class="cf-subtitle">Managed DoH Feed</h3>
+
+        <div class="cf-form-grid">
+          <label class="cf-check cf-wide">
+            <input id="cf-feed-enabled" type="checkbox">
+            <span>Использовать managed DoH feed</span>
+          </label>
+
+          <label class="cf-wide">
+            <span>Feed URL</span>
+            <input id="cf-feed-url" type="url">
+          </label>
+
+          <label>
+            <span>Timeout, сек</span>
+            <input id="cf-feed-timeout" type="number" min="1" max="60">
+          </label>
+
+          <label>
+            <span>Max size, bytes</span>
+            <input id="cf-feed-bytes" type="number" min="1024" max="10485760">
+          </label>
+
+          <label>
+            <span>Min addresses</span>
+            <input id="cf-feed-min" type="number" min="1">
+          </label>
+
+          <label>
+            <span>Max addresses</span>
+            <input id="cf-feed-max" type="number" min="1">
+          </label>
+        </div>
+
+        <p class="hint">
+          Сейчас поддерживается политика default_action=allow.
+          Allowed domains пока не поддерживаются backend.
+        </p>
+
+        <p id="cf-form-message" class="hint"></p>
+
+        <div class="cf-actions">
+          <button id="cf-reload" type="button">Перечитать</button>
+          <button id="cf-validate" type="button">Проверить</button>
+          <button id="cf-apply" type="submit">Применить</button>
+        </div>
+      </form>
+    `;
+
+    main.append(manage);
+  }
+}
+
+
+async function cfLoadMonitoring() {
+  const status = document.getElementById("cf-monitor-status");
+  if (!status) return;
+
+  const message = document.getElementById("cf-monitor-message");
+
+  try {
+    const dashboard = await cfRequest("/api/v1/dashboard");
+    const component = dashboard.components?.content_filter;
+    const d = component?.details || {};
+
+    status.textContent = String(component?.status || "unknown").toUpperCase();
+    message.textContent = component?.message || "Нет данных";
+
+    document.getElementById("cf-monitor-dns").textContent =
+      d.dns_enabled ? "ON" : "OFF";
+
+    document.getElementById("cf-monitor-blocked").textContent =
+      d.blocked_domains ?? 0;
+
+    document.getElementById("cf-monitor-doh-count").textContent =
+      d.managed_doh_addresses ?? "—";
+
+    document.getElementById("cf-monitor-iface").textContent =
+      d.listen_interface || "—";
+
+    document.getElementById("cf-monitor-address").textContent =
+      d.listen_address || "—";
+
+    document.getElementById("cf-monitor-dot").textContent =
+      d.block_dot ? "BLOCK" : "ALLOW";
+
+    document.getElementById("cf-monitor-doq").textContent =
+      d.block_doq ? "BLOCK" : "ALLOW";
+
+    document.getElementById("cf-monitor-doh").textContent =
+      d.doh_enabled ? "BLOCK" : "ALLOW";
+
+    document.getElementById("cf-monitor-feed").textContent =
+      d.managed_doh_feed ? "ON" : "OFF";
+
+    document.getElementById("cf-monitor-updated").textContent =
+      d.managed_doh_updated_at || "—";
+
+  } catch (error) {
+    status.textContent = "ERROR";
+    message.textContent = error.message;
+  }
+}
+
+
+function cfBuildPayload() {
+  return {
+    enabled: document.getElementById("cf-enabled").checked,
+
+    dns: {
+      enabled: document.getElementById("cf-dns-enabled").checked,
+      listen_interface:
+        document.getElementById("cf-listen-interface").value.trim(),
+      listen_address:
+        document.getElementById("cf-listen-address").value.trim(),
+      upstream_servers:
+        cfLines(document.getElementById("cf-upstreams").value),
+    },
+
+    policy: {
+      default_action: "allow",
+      blocked_domains:
+        cfLines(document.getElementById("cf-blocked").value),
+      allowed_domains: [],
+    },
+
+    encrypted_dns: {
+      block_dot:
+        document.getElementById("cf-block-dot").checked,
+      block_doq:
+        document.getElementById("cf-block-doq").checked,
+
+      doh: {
+        enabled:
+          document.getElementById("cf-doh-enabled").checked,
+
+        resolver_addresses:
+          cfLines(
+            document.getElementById("cf-doh-resolvers").value
+          ),
+
+        managed_feed_enabled:
+          document.getElementById("cf-feed-enabled").checked,
+
+        managed_feed_url:
+          document.getElementById("cf-feed-url").value.trim() || null,
+
+        managed_feed_timeout_seconds:
+          Number(document.getElementById("cf-feed-timeout").value),
+
+        managed_feed_max_bytes:
+          Number(document.getElementById("cf-feed-bytes").value),
+
+        managed_feed_min_addresses:
+          Number(document.getElementById("cf-feed-min").value),
+
+        managed_feed_max_addresses:
+          Number(document.getElementById("cf-feed-max").value),
+      },
+    },
+
+    logging: {
+      enabled:
+        document.getElementById("cf-logging").checked,
+    },
+  };
+}
+
+
+function cfFillForm(cf) {
+  document.getElementById("cf-enabled").checked = cf.enabled;
+  document.getElementById("cf-dns-enabled").checked = cf.dns.enabled;
+
+  document.getElementById("cf-listen-interface").value =
+    cf.dns.listen_interface;
+
+  document.getElementById("cf-listen-address").value =
+    cf.dns.listen_address;
+
+  document.getElementById("cf-upstreams").value =
+    (cf.dns.upstream_servers || []).join("\n");
+
+  document.getElementById("cf-blocked").value =
+    (cf.policy.blocked_domains || []).join("\n");
+
+  document.getElementById("cf-block-dot").checked =
+    cf.encrypted_dns.block_dot;
+
+  document.getElementById("cf-block-doq").checked =
+    cf.encrypted_dns.block_doq;
+
+  const doh = cf.encrypted_dns.doh;
+
+  document.getElementById("cf-doh-enabled").checked =
+    doh.enabled;
+
+  document.getElementById("cf-doh-resolvers").value =
+    (doh.resolver_addresses || []).join("\n");
+
+  document.getElementById("cf-feed-enabled").checked =
+    doh.managed_feed_enabled;
+
+  document.getElementById("cf-feed-url").value =
+    doh.managed_feed_url || "";
+
+  document.getElementById("cf-feed-timeout").value =
+    doh.managed_feed_timeout_seconds;
+
+  document.getElementById("cf-feed-bytes").value =
+    doh.managed_feed_max_bytes;
+
+  document.getElementById("cf-feed-min").value =
+    doh.managed_feed_min_addresses;
+
+  document.getElementById("cf-feed-max").value =
+    doh.managed_feed_max_addresses;
+
+  document.getElementById("cf-logging").checked =
+    cf.logging.enabled;
+}
+
+
+async function cfLoadConfig() {
+  const state = document.getElementById("cf-config-state");
+  if (!state) return;
+
+  state.textContent = "Загрузка…";
+
+  try {
+    const data = await cfRequest(
+      "/api/v1/content-filter/config"
+    );
+
+    cfFillForm(data.content_filter);
+    state.textContent = "Загружено";
+
+  } catch (error) {
+    state.textContent = "Ошибка";
+    document.getElementById("cf-form-message").textContent =
+      error.message;
+  }
+}
+
+
+async function cfValidateConfig() {
+  const message = document.getElementById("cf-form-message");
+
+  message.textContent = "Проверка…";
+
+  try {
+    await cfRequest(
+      "/api/v1/content-filter/config/validate",
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(cfBuildPayload()),
+      }
+    );
+
+    message.textContent = "Конфигурация корректна.";
+    return true;
+
+  } catch (error) {
+    message.textContent = `Ошибка: ${error.message}`;
+    return false;
+  }
+}
+
+
+async function cfApplyConfig(event) {
+  event.preventDefault();
+
+  const message = document.getElementById("cf-form-message");
+
+  if (!(await cfValidateConfig())) return;
+
+  message.textContent = "Применение…";
+
+  try {
+    const result = await cfRequest(
+      "/api/v1/content-filter/config/apply",
+      {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify(cfBuildPayload()),
+      }
+    );
+
+    message.textContent =
+      `Применено. Заблокированных доменов: ${result.blocked_domains}.`;
+
+    await cfLoadMonitoring();
+
+  } catch (error) {
+    message.textContent = `Ошибка применения: ${error.message}`;
+  }
+}
+
+
+function cfBindUi() {
+  const form = document.getElementById("cf-form");
+
+  if (!form || form.dataset.bound === "true") return;
+
+  form.dataset.bound = "true";
+
+  form.addEventListener("submit", cfApplyConfig);
+
+  document.getElementById("cf-reload")
+    ?.addEventListener("click", cfLoadConfig);
+
+  document.getElementById("cf-validate")
+    ?.addEventListener("click", cfValidateConfig);
+
+  document.getElementById("cf-monitor-refresh")
+    ?.addEventListener("click", cfLoadMonitoring);
+
+  cfLoadConfig();
+  cfLoadMonitoring();
+}
+
+
+function secboxClassifyPages() {
+  const main = document.getElementById("app-main");
+
+  if (!main) return;
+
+  secboxCreateContentFilterPages();
+  cfBindUi();
+
+  fwCreatePages();
+  fwBindUi();
+
+  // Overview
+  [
+    "header#overview",
+    ".health-grid",
+    ".metrics",
+    "#attention-panel",
+  ].forEach((selector) => {
+    document.querySelectorAll(selector).forEach((node) => {
+      node.dataset.secboxPage = "overview";
+    });
+  });
+
+  // Runtime VPN -> Monitoring / VPN
+  const vpn = document.getElementById("vpn");
+
+  if (vpn) {
+    vpn.dataset.secboxPage = "monitor-vpn";
+  }
+
+
+
+  // Services -> monitoring.
+  const services = document.getElementById("services");
+
+  if (services) {
+    services.dataset.secboxPage = "monitor-services";
+  }
+
+  // Raw configuration -> management/system.
+  const configuration = document.getElementById("configuration");
+
+  if (configuration) {
+    configuration.dataset.secboxPage = "manage-system";
+  }
+
+  const globalMessage = document.getElementById("global-message");
+
+  if (globalMessage) {
+    globalMessage.dataset.secboxGlobal = "true";
+  }
+
+  const placeholders = [
+    [
+      "monitor-network",
+      "Сеть",
+      "Оперативное состояние интерфейсов, адресов, маршрутов и сетевых связей SecBox."
+    ],
+    [
+      "monitor-firewall",
+      "Firewall",
+      "Состояние nftables, counters, активный ruleset и события фильтрации."
+    ],
+    [
+      "monitor-ids",
+      "IDS / IPS",
+      "Состояние Suricata, события безопасности и статистика обнаруженных угроз."
+    ],
+    [
+      "monitor-blackhole",
+      "Dynamic Blackhole",
+      "Активные динамические блокировки, причины, TTL и статистика."
+    ],
+    [
+      "monitor-content-filter",
+      "Content Filter",
+      "Состояние фильтрации, категории, блокировки и статистика."
+    ],
+    [
+      "monitor-system",
+      "Система",
+      "CPU, RAM, диски, uptime, журналы и общее состояние SecBox."
+    ],
+    [
+      "manage-dhcp",
+      "DHCP / DNS",
+      "Управление DHCP scopes, DNS и параметрами клиентских сетей."
+    ],
+    [
+      "manage-vpn-l3",
+      "L3 VPN",
+      "Управление маршрутизируемыми WireGuard-туннелями и VPN pool."
+    ],
+    [
+      "manage-vpn-l2",
+      "L2 VPN",
+      "Управление L2 overlays, bridge, access ports и Ethernet over WireGuard."
+    ],
+    [
+      "manage-firewall",
+      "Firewall",
+      "Управление политиками nftables, зонами, правилами, NAT и counters."
+    ],
+    [
+      "manage-ids",
+      "IDS / IPS",
+      "Управление сигнатурами, режимами IDS/IPS и реакциями на угрозы."
+    ],
+    [
+      "manage-blackhole",
+      "Dynamic Blackhole",
+      "Политики автоматического blackholing и ручное управление блокировками."
+    ],
+    [
+      "manage-content-filter",
+      "Content Filter",
+      "Управление категориями, доменами, исключениями и политиками фильтрации."
+    ],
+    [
+      "manage-services",
+      "Службы",
+      "Запуск, остановка и перезапуск разрешённых служб SecBox."
+    ],
+  ];
+
+  for (const [page, title, description] of placeholders) {
+    if (!main.querySelector(`[data-secbox-page="${page}"]`)) {
+      main.append(
+        secboxCreatePlaceholder(page, title, description)
+      );
+    }
+  }
+}
+
+
+function secboxUpdateNavigation(route) {
+  document.querySelectorAll("[data-page-link]").forEach((link) => {
+    let active = link.dataset.pageLink === route.page;
+
+    // VPN Monitoring is one sidebar module with L3/L2 tabs.
+    if (
+      link.dataset.pageLink === "monitor-vpn" &&
+      (
+        secboxCurrentPath() === "/monitoring/vpn/l3" ||
+        secboxCurrentPath() === "/monitoring/vpn/l2"
+      )
+    ) {
+      active = true;
+    }
+
+    // Network is one sidebar module with two internal tabs.
+    if (
+      link.dataset.pageLink === "manage-network" &&
+      (
+        secboxCurrentPath() === "/manage/network/interfaces" ||
+        secboxCurrentPath() === "/manage/network/dhcp"
+      )
+    ) {
+      active = true;
+    }
+
+    // VPN is one sidebar module with L3/L2 internal tabs.
+    if (
+      link.dataset.pageLink === "manage-vpn" &&
+      (
+        secboxCurrentPath() === "/manage/vpn/l3" ||
+        secboxCurrentPath() === "/manage/vpn/l2"
+      )
+    ) {
+      active = true;
+    }
+
+    link.classList.toggle("active", active);
+
+    if (active) {
+      link.setAttribute("aria-current", "page");
+    } else {
+      link.removeAttribute("aria-current");
+    }
+  });
+}
+
+
+
+function secboxEnsureVpnMonitoringTabs() {
+  const path = secboxCurrentPath();
+
+  if (
+    path !== "/monitoring/vpn/l3" &&
+    path !== "/monitoring/vpn/l2"
+  ) {
+    return;
+  }
+
+  if (
+    document.getElementById(
+      "vpn-monitoring-tabs"
+    )
+  ) {
+    return;
+  }
+
+  const main =
+    document.getElementById("app-main");
+
+  if (!main) {
+    return;
+  }
+
+  const breadcrumb =
+    document.getElementById(
+      "page-breadcrumb"
+    );
+
+  const tabs =
+    document.createElement("nav");
+
+  tabs.id = "vpn-monitoring-tabs";
+  tabs.className = "module-tabs";
+  tabs.setAttribute(
+    "aria-label",
+    "VPN Monitoring"
+  );
+
+  tabs.innerHTML = `
+    <a
+      href="/monitoring/vpn/l3"
+      class="module-tab"
+      data-vpn-monitor-tab="l3"
+    >L3</a>
+
+    <a
+      href="/monitoring/vpn/l2"
+      class="module-tab"
+      data-vpn-monitor-tab="l2"
+    >L2</a>
+  `;
+
+  if (breadcrumb) {
+    breadcrumb.insertAdjacentElement(
+      "afterend",
+      tabs
+    );
+  } else {
+    main.prepend(tabs);
+  }
+
+  tabs.querySelectorAll("a")
+    .forEach((link) => {
+      link.addEventListener(
+        "click",
+        (event) => {
+          if (
+            event.button !== 0 ||
+            event.metaKey ||
+            event.ctrlKey ||
+            event.shiftKey ||
+            event.altKey
+          ) {
+            return;
+          }
+
+          event.preventDefault();
+
+          secboxNavigate(
+            link.getAttribute("href")
+          );
+        }
+      );
+    });
+}
+
+
+function secboxUpdateVpnMonitoringTabs() {
+  const path = secboxCurrentPath();
+
+  const vpnPage =
+    path === "/monitoring/vpn/l3" ||
+    path === "/monitoring/vpn/l2";
+
+  let tabs =
+    document.getElementById(
+      "vpn-monitoring-tabs"
+    );
+
+  if (!vpnPage) {
+    tabs?.remove();
+    return;
+  }
+
+  secboxEnsureVpnMonitoringTabs();
+
+  tabs =
+    document.getElementById(
+      "vpn-monitoring-tabs"
+    );
+
+  if (!tabs) {
+    return;
+  }
+
+  tabs
+    .querySelectorAll(
+      "[data-vpn-monitor-tab]"
+    )
+    .forEach((tab) => {
+      const active =
+        (
+          path === "/monitoring/vpn/l3" &&
+          tab.dataset.vpnMonitorTab === "l3"
+        )
+        ||
+        (
+          path === "/monitoring/vpn/l2" &&
+          tab.dataset.vpnMonitorTab === "l2"
+        );
+
+      tab.classList.toggle(
+        "active",
+        active
+      );
+
+      if (active) {
+        tab.setAttribute(
+          "aria-current",
+          "page"
+        );
+      } else {
+        tab.removeAttribute(
+          "aria-current"
+        );
+      }
+    });
+}
+
+
+function secboxEnsureVpnTabs() {
+  const path = secboxCurrentPath();
+
+  if (
+    path !== "/manage/vpn/l3" &&
+    path !== "/manage/vpn/l2"
+  ) {
+    return;
+  }
+
+  // Do not create the tabs twice.
+  if (document.getElementById("vpn-management-tabs")) {
+    return;
+  }
+
+  const main = document.getElementById("app-main");
+
+  if (!main) {
+    return;
+  }
+
+  const breadcrumb =
+    document.getElementById("page-breadcrumb");
+
+  const tabs = document.createElement("nav");
+
+  tabs.id = "vpn-management-tabs";
+  tabs.className = "module-tabs";
+  tabs.setAttribute("aria-label", "VPN");
+
+  tabs.innerHTML = `
+    <a
+      href="/manage/vpn/l3"
+      class="module-tab"
+      data-vpn-tab="l3"
+    >L3</a>
+
+    <a
+      href="/manage/vpn/l2"
+      class="module-tab"
+      data-vpn-tab="l2"
+    >L2</a>
+  `;
+
+  if (breadcrumb) {
+    breadcrumb.insertAdjacentElement("afterend", tabs);
+  } else {
+    main.prepend(tabs);
+  }
+
+  tabs.querySelectorAll("a").forEach((link) => {
+    link.addEventListener("click", (event) => {
+      if (
+        event.button !== 0 ||
+        event.metaKey ||
+        event.ctrlKey ||
+        event.shiftKey ||
+        event.altKey
+      ) {
+        return;
+      }
+
+      event.preventDefault();
+      secboxNavigate(link.getAttribute("href"));
+    });
+  });
+}
+
+
+function secboxUpdateVpnTabs() {
+  const tabs =
+    document.getElementById("vpn-management-tabs");
+
+  const path = secboxCurrentPath();
+
+  const vpnPage =
+    path === "/manage/vpn/l3" ||
+    path === "/manage/vpn/l2";
+
+  if (!vpnPage) {
+    tabs?.remove();
+    return;
+  }
+
+  secboxEnsureVpnTabs();
+
+  const currentTabs =
+    document.getElementById("vpn-management-tabs");
+
+  if (!currentTabs) {
+    return;
+  }
+
+  currentTabs
+    .querySelectorAll("[data-vpn-tab]")
+    .forEach((tab) => {
+      const active =
+        (path === "/manage/vpn/l3" &&
+         tab.dataset.vpnTab === "l3") ||
+        (path === "/manage/vpn/l2" &&
+         tab.dataset.vpnTab === "l2");
+
+      tab.classList.toggle("active", active);
+
+      if (active) {
+        tab.setAttribute("aria-current", "page");
+      } else {
+        tab.removeAttribute("aria-current");
+      }
+    });
+}
+
+
+function secboxActivatePage() {
+  window.setTimeout(
+    () => {
+      const path =
+        secboxCurrentPath();
+
+      if (
+        path === "/monitoring/firewall"
+      ) {
+        fwLoadRuntime();
+      }
+
+      if (
+        path === "/manage/firewall"
+      ) {
+        fwLoadConfig();
+      }
+    },
+    0
+  );
+  const route = secboxRoute();
+
+  document.body.dataset.page = route.page;
+  document.title = `${route.title} — SecBox`;
+
+  secboxUpdateNavigation(route);
+
+  if (
+    route.page === "monitor-services"
+    || route.page === "manage-services"
+  ) {
+    window.setTimeout(
+      loadManagedServices,
+      0
+    );
+  }
+  secboxUpdateVpnTabs();
+  secboxUpdateVpnMonitoringTabs();
+
+  if (
+    secboxCurrentPath() ===
+    "/monitoring/vpn/l2"
+  ) {
+    refreshL2VpnMonitoring();
+  }
+
+  if (route.page === "monitor-vpn") {
+    refreshL2VpnMonitoring();
+  }
+
+  document.querySelectorAll("[data-secbox-page]").forEach((node) => {
+    let visible = node.dataset.secboxPage === route.page;
+
+    const path = secboxCurrentPath();
+
+    if (path === "/monitoring/vpn/l3") {
+      visible = node.id === "vpn";
+    }
+
+    if (path === "/monitoring/vpn/l2") {
+      visible =
+        node.id === "vpn-l2-monitoring-page";
+    }
+
+    if (path === "/manage/network/interfaces") {
+      visible = node.id === "network-interfaces-page";
+    }
+
+    if (path === "/manage/network/dhcp") {
+      visible = node.id === "network-dhcp-page";
+    }
+
+    if (path === "/manage/vpn/l3") {
+      visible = node.id === "vpn-configuration-l3-panel";
+    }
+
+    if (path === "/manage/vpn/l2") {
+      visible = node.id === "vpn-configuration-l2-panel";
+    }
+
+    node.hidden = !visible;
+  });
+
+  const breadcrumb = document.getElementById("page-breadcrumb");
+
+  if (breadcrumb) {
+    breadcrumb.replaceChildren();
+
+    const section = document.createElement("span");
+    section.textContent = route.section;
+
+    const separator = document.createElement("span");
+    separator.className = "breadcrumb-separator";
+    separator.textContent = "/";
+
+    const title = document.createElement("strong");
+    title.textContent = route.title;
+
+    const subtitle = document.createElement("small");
+    subtitle.textContent = route.subtitle;
+
+    breadcrumb.append(section, separator, title, subtitle);
+  }
+
+  window.scrollTo({top: 0, behavior: "instant"});
+}
+
+
+function secboxNavigate(path) {
+  if (window.location.pathname !== path) {
+    history.pushState({}, "", path);
+  }
+
+  secboxActivatePage();
+}
+
+
+function secboxToggleNavigation() {
+  document.querySelectorAll(".nav-group-toggle").forEach((button) => {
+    button.addEventListener("click", () => {
+      const group = button.closest(".nav-group");
+      const expanded = !group.classList.contains("expanded");
+
+      group.classList.toggle("expanded", expanded);
+      button.setAttribute("aria-expanded", String(expanded));
+    });
+  });
+
+  document.querySelectorAll(".nav-subgroup-toggle").forEach((button) => {
+    button.addEventListener("click", () => {
+      const group = button.closest(".nav-subgroup");
+      const expanded = !group.classList.contains("expanded");
+
+      group.classList.toggle("expanded", expanded);
+      button.setAttribute("aria-expanded", String(expanded));
+    });
+  });
+}
+
+
+function secboxInitRouter() {
+  secboxClassifyPages();
+  secboxToggleNavigation();
+
+  document.querySelectorAll("[data-page-link]").forEach((link) => {
+    link.addEventListener("click", (event) => {
+      if (
+        event.button !== 0 ||
+        event.metaKey ||
+        event.ctrlKey ||
+        event.shiftKey ||
+        event.altKey
+      ) {
+        return;
+      }
+
+      event.preventDefault();
+      secboxNavigate(link.getAttribute("href"));
+    });
+  });
+
+  window.addEventListener("popstate", secboxActivatePage);
+
+  secboxActivatePage();
+}
+
+
+if (document.readyState === "loading") {
+  document.addEventListener(
+    "DOMContentLoaded",
+    secboxInitRouter
+  );
+} else {
+  secboxInitRouter();
+}
+
+
+/* SECBOX L2 VPN MONITORING */
+(() => {
+  function bindL2VpnMonitoring() {
+    const button =
+      document.getElementById("vpn-l2-refresh");
+
+    if (!button || button.dataset.bound === "true") {
+      return;
+    }
+
+    button.dataset.bound = "true";
+
+    button.addEventListener(
+      "click",
+      refreshL2VpnMonitoring
+    );
+  }
+
+  if (document.readyState === "loading") {
+    document.addEventListener(
+      "DOMContentLoaded",
+      bindL2VpnMonitoring
+    );
+  } else {
+    bindL2VpnMonitoring();
+  }
+
+  window.setInterval(() => {
+    if (
+      window.location.pathname === "/monitoring/vpn"
+    ) {
+      refreshL2VpnMonitoring();
+    }
+  }, 10000);
+})();
+
+
+/* SECBOX VPN L2 MONITOR BIND */
+(() => {
+  function bindVpnL2Monitor() {
+    const button =
+      document.getElementById(
+        "vpn-l2-refresh"
+      );
+
+    if (
+      !button ||
+      button.dataset.bound === "true"
+    ) {
+      return;
+    }
+
+    button.dataset.bound =
+      "true";
+
+    button.addEventListener(
+      "click",
+      refreshL2VpnMonitoring
+    );
+  }
+
+  if (
+    document.readyState === "loading"
+  ) {
+    document.addEventListener(
+      "DOMContentLoaded",
+      bindVpnL2Monitor
+    );
+  } else {
+    bindVpnL2Monitor();
+  }
+
+  window.setInterval(() => {
+    if (
+      secboxCurrentPath() ===
+      "/monitoring/vpn/l2"
+    ) {
+      refreshL2VpnMonitoring();
+    }
+  }, 10000);
+})();
+
+
+/* ==========================================================
+   SecBox Services Monitoring / Management
+   ========================================================== */
+
+function secboxCreateServicesPages() {
+  const main = document.getElementById("app-main");
+
+  if (!main) {
+    return;
+  }
+
+  for (const page of document.querySelectorAll(
+    '[data-secbox-page="monitor-services"],'
+    + '[data-secbox-page="manage-services"]'
+  )) {
+    page.remove();
+  }
+
+  const footer = main.querySelector("footer");
+
+  const monitor = document.createElement("section");
+  monitor.id = "services-monitoring-page";
+  monitor.className = "panel services-page";
+  monitor.dataset.secboxPage = "monitor-services";
+  monitor.hidden = true;
+
+  monitor.innerHTML = `
+    <div class="section-heading">
+      <div>
+        <p class="eyebrow">Мониторинг / Службы</p>
+        <h2>Состояние служб</h2>
+      </div>
+
+      <button
+        id="services-monitor-refresh"
+        type="button"
+        class="secondary"
+      >Обновить</button>
+    </div>
+
+    <p class="hint">
+      Runtime-состояние системных компонентов SecBox.
+      Состояние systemd само по себе не подтверждает
+      корректность обработки трафика.
+    </p>
+
+    <p
+      id="services-monitor-error"
+      class="error"
+      role="status"
+    ></p>
+
+    <div
+      id="services-monitor-list"
+      class="managed-service-list"
+    ></div>
+  `;
+
+  const manage = document.createElement("section");
+  manage.id = "services-management-page";
+  manage.className = "panel services-page";
+  manage.dataset.secboxPage = "manage-services";
+  manage.hidden = true;
+
+  manage.innerHTML = `
+    <div class="section-heading">
+      <div>
+        <p class="eyebrow">Управление / Службы</p>
+        <h2>Управление службами</h2>
+      </div>
+
+      <button
+        id="services-manage-refresh"
+        type="button"
+        class="secondary"
+      >Обновить</button>
+    </div>
+
+    <p class="hint">
+      Доступны только явно разрешённые действия.
+      Критичные операции, способные отключить
+      Web UI, Firewall, DNS/DHCP или оставить
+      неконсистентный VPN runtime, заблокированы.
+    </p>
+
+    <p
+      id="services-manage-error"
+      class="error"
+      role="status"
+    ></p>
+
+    <div
+      id="services-manage-list"
+      class="managed-service-list"
+    ></div>
+  `;
+
+  if (footer) {
+    main.insertBefore(monitor, footer);
+    main.insertBefore(manage, footer);
+  } else {
+    main.append(monitor, manage);
+  }
+}
+
+
+function serviceHealthLabel(service) {
+  if (service.health === "ok") {
+    return "ACTIVE";
+  }
+
+  if (service.health === "idle") {
+    return "IDLE";
+  }
+
+  if (service.health === "error") {
+    return "ERROR";
+  }
+
+  return "INACTIVE";
+}
+
+
+function serviceHealthClass(service) {
+  if (service.health === "ok") {
+    return "healthy";
+  }
+
+  if (service.health === "error") {
+    return "down";
+  }
+
+  if (service.health === "idle") {
+    return "idle";
+  }
+
+  return "degraded";
+}
+
+
+function serviceActionLabel(operation) {
+  if (operation === "start") {
+    return "Запустить";
+  }
+
+  if (operation === "stop") {
+    return "Остановить";
+  }
+
+  if (operation === "restart") {
+    return "Перезапустить";
+  }
+
+  return operation;
+}
+
+
+function drawManagedServices(
+  targetId,
+  services,
+  management
+) {
+  const target = byId(targetId);
+
+  if (!target) {
+    return;
+  }
+
+  target.replaceChildren();
+
+  for (const service of services) {
+    const card =
+      document.createElement("article");
+
+    card.className =
+      "managed-service-card";
+
+
+    const top =
+      document.createElement("div");
+
+    top.className =
+      "managed-service-top";
+
+
+    const identity =
+      document.createElement("div");
+
+    const label =
+      document.createElement("strong");
+
+    label.textContent =
+      service.label;
+
+    const unit =
+      document.createElement("code");
+
+    unit.textContent =
+      service.unit;
+
+    identity.append(
+      label,
+      unit
+    );
+
+
+    const status =
+      document.createElement("span");
+
+    status.className =
+      `vpn-status ${
+        serviceHealthClass(service)
+      }`;
+
+    status.textContent =
+      serviceHealthLabel(service);
+
+    top.append(
+      identity,
+      status
+    );
+
+
+    const metrics =
+      document.createElement("dl");
+
+    metrics.className =
+      "managed-service-metrics";
+
+    const values = [
+      [
+        "Active",
+        service.active_state,
+      ],
+      [
+        "Substate",
+        service.sub_state,
+      ],
+      [
+        "Load",
+        service.load_state,
+      ],
+      [
+        "Startup",
+        service.unit_file_state,
+      ],
+      [
+        "Type",
+        service.kind,
+      ],
+    ];
+
+    for (const [name, value] of values) {
+      const item =
+        document.createElement("div");
+
+      const dt =
+        document.createElement("dt");
+
+      const dd =
+        document.createElement("dd");
+
+      dt.textContent = name;
+      dd.textContent = value || "—";
+
+      item.append(dt, dd);
+      metrics.append(item);
+    }
+
+
+    const note =
+      document.createElement("p");
+
+    note.className =
+      "managed-service-note";
+
+    note.textContent =
+      service.note || "";
+
+
+    card.append(
+      top,
+      metrics,
+      note
+    );
+
+
+    if (management) {
+      const actions =
+        document.createElement("div");
+
+      actions.className =
+        "managed-service-actions";
+
+      for (
+        const operation
+        of service.allowed_actions || []
+      ) {
+        const button =
+          document.createElement("button");
+
+        button.type = "button";
+        button.dataset.serviceUnit =
+          service.unit;
+
+        button.dataset.serviceOperation =
+          operation;
+
+        button.textContent =
+          serviceActionLabel(operation);
+
+        if (operation !== "restart") {
+          button.className =
+            "secondary";
+        }
+
+        if (
+          operation === "start" &&
+          service.active_state === "active"
+        ) {
+          button.disabled = true;
+        }
+
+        if (
+          operation === "stop" &&
+          service.active_state !== "active"
+        ) {
+          button.disabled = true;
+        }
+
+        actions.append(button);
+      }
+
+      if (
+        !(service.allowed_actions || []).length
+      ) {
+        const locked =
+          document.createElement("span");
+
+        locked.className =
+          "managed-service-locked";
+
+        locked.textContent =
+          "Только мониторинг";
+
+        actions.append(locked);
+      }
+
+      card.append(actions);
+    }
+
+    target.append(card);
+  }
+}
+
+
+let managedServicesLoading = false;
+
+
+async function loadManagedServices() {
+  if (managedServicesLoading) {
+    return;
+  }
+
+  const path =
+    window.location.pathname;
+
+  const monitoring =
+    path === "/monitoring/services";
+
+  const management =
+    path === "/manage/services";
+
+  if (!monitoring && !management) {
+    return;
+  }
+
+  managedServicesLoading = true;
+
+  const errorNode = byId(
+    management
+      ? "services-manage-error"
+      : "services-monitor-error"
+  );
+
+  try {
+    if (errorNode) {
+      errorNode.textContent = "";
+    }
+
+    const body =
+      await api("services/managed");
+
+    drawManagedServices(
+      management
+        ? "services-manage-list"
+        : "services-monitor-list",
+      body.services || [],
+      management
+    );
+
+  } catch (error) {
+    if (errorNode) {
+      errorNode.textContent =
+        `Не удалось получить состояние служб: ${
+          error.message
+        }`;
+    }
+
+  } finally {
+    managedServicesLoading = false;
+  }
+}
+
+
+async function executeServiceAction(
+  unit,
+  operation
+) {
+  const warning =
+    operation === "stop"
+      ? (
+          `Остановить ${unit}?\n\n`
+          + "Связанные функции SecBox могут стать недоступны."
+        )
+      : (
+          `${serviceActionLabel(operation)} ${unit}?`
+        );
+
+  if (!window.confirm(warning)) {
+    return;
+  }
+
+  const errorNode =
+    byId("services-manage-error");
+
+  try {
+    if (errorNode) {
+      errorNode.textContent = "";
+    }
+
+    await api(
+      "services/action",
+      {
+        method: "POST",
+        headers: {
+          "Content-Type":
+            "application/json",
+        },
+        body: JSON.stringify({
+          unit,
+          operation,
+        }),
+      }
+    );
+
+    await loadManagedServices();
+
+  } catch (error) {
+    if (errorNode) {
+      errorNode.textContent =
+        `Операция не выполнена: ${
+          error.message
+        }`;
+    }
+  }
+}
+
+
+function bindServicesPages() {
+  byId("services-monitor-refresh")
+    ?.addEventListener(
+      "click",
+      loadManagedServices
+    );
+
+  byId("services-manage-refresh")
+    ?.addEventListener(
+      "click",
+      loadManagedServices
+    );
+
+  byId("services-manage-list")
+    ?.addEventListener(
+      "click",
+      (event) => {
+        const button =
+          event.target.closest(
+            "[data-service-unit]"
+          );
+
+        if (!button) {
+          return;
+        }
+
+        executeServiceAction(
+          button.dataset.serviceUnit,
+          button.dataset.serviceOperation
+        );
+      }
+    );
+}
+
+
+secboxCreateServicesPages();
+bindServicesPages();
+
+window.setInterval(() => {
+  if (
+    window.location.pathname ===
+      "/monitoring/services"
+    ||
+    window.location.pathname ===
+      "/manage/services"
+  ) {
+    loadManagedServices();
+  }
+}, 10000);
+
+
+/* ==========================================================
+   SecBox Firewall Monitoring / Management
+   ========================================================== */
+
+let firewallConfigSnapshot = null;
+let firewallBusy = false;
+
+
+function fwRequest(
+  path,
+  options = {}
+) {
+  return api(
+    path,
+    options
+  );
+}
+
+
+function fwCreatePages() {
+  const main =
+    document.getElementById(
+      "app-main"
+    );
+
+  if (!main) {
+    return;
+  }
+
+  if (
+    !main.querySelector(
+      '[data-secbox-page="monitor-firewall"]'
+    )
+  ) {
+    const section =
+      document.createElement(
+        "section"
+      );
+
+    section.className =
+      "panel firewall-page";
+
+    section.dataset.secboxPage =
+      "monitor-firewall";
+
+    section.innerHTML = `
+      <div class="section-heading">
+        <div>
+          <p class="eyebrow">Мониторинг / Firewall</p>
+          <h2>Firewall Runtime</h2>
+        </div>
+
+        <button
+          id="fw-monitor-refresh"
+          type="button"
+          class="secondary"
+        >Обновить</button>
+      </div>
+
+      <p class="hint">
+        Реальное состояние nftables, IPv4 forwarding,
+        NAT и счётчиков правил.
+      </p>
+
+      <p
+        id="fw-monitor-error"
+        class="error"
+        role="status"
+      ></p>
+
+      <div class="fw-status-grid">
+        <article>
+          <span>Filter table</span>
+          <strong id="fw-mon-filter">—</strong>
+        </article>
+
+        <article>
+          <span>IPv4 forwarding</span>
+          <strong id="fw-mon-forwarding">—</strong>
+        </article>
+
+        <article>
+          <span>NAT</span>
+          <strong id="fw-mon-nat">—</strong>
+        </article>
+
+        <article>
+          <span>Blacklist runtime</span>
+          <strong id="fw-mon-blacklist">—</strong>
+        </article>
+      </div>
+
+      <h3>Цепочки</h3>
+
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>Chain</th>
+              <th>Policy</th>
+              <th>Rules</th>
+              <th>Counter packets</th>
+              <th>Counter bytes</th>
+            </tr>
+          </thead>
+
+          <tbody id="fw-monitor-chains"></tbody>
+        </table>
+      </div>
+
+      <h3>NAT egress</h3>
+
+      <div
+        id="fw-monitor-nat-ifaces"
+        class="fw-chip-list"
+      ></div>
+    `;
+
+    main.append(section);
+  }
+
+  if (
+    !main.querySelector(
+      '[data-secbox-page="manage-firewall"]'
+    )
+  ) {
+    const section =
+      document.createElement(
+        "section"
+      );
+
+    section.className =
+      "panel firewall-page";
+
+    section.dataset.secboxPage =
+      "manage-firewall";
+
+    section.innerHTML = `
+      <div class="section-heading">
+        <div>
+          <p class="eyebrow">Управление / Firewall</p>
+          <h2>Firewall Configuration</h2>
+        </div>
+
+        <span
+          id="fw-config-state"
+          class="tag"
+        >Загрузка…</span>
+      </div>
+
+      <p class="hint">
+        Конфигурация применяется транзакционно через
+        privileged helper. TCP/8443 на MGMT защищён
+        от удаления через Web UI.
+      </p>
+
+      <p
+        id="fw-config-error"
+        class="error"
+        role="status"
+      ></p>
+
+      <form id="fw-form">
+        <div class="fw-form-grid">
+
+          <label class="fw-check">
+            <input
+              id="fw-enabled"
+              type="checkbox"
+              checked
+              disabled
+            >
+            <span>Firewall включён</span>
+          </label>
+
+          <label class="fw-check">
+            <input
+              id="fw-ip-forward"
+              type="checkbox"
+            >
+            <span>IPv4 forwarding</span>
+          </label>
+
+          <label class="fw-check">
+            <input
+              id="fw-nat"
+              type="checkbox"
+            >
+            <span>NAT / masquerade</span>
+          </label>
+
+          <label class="fw-check">
+            <input
+              id="fw-lan-wan"
+              type="checkbox"
+            >
+            <span>Разрешать LAN → uplink</span>
+          </label>
+
+          <label>
+            <span>WAN interface</span>
+            <select
+              id="fw-wan"
+              required
+            ></select>
+          </label>
+
+          <label>
+            <span>LAN interface</span>
+            <select
+              id="fw-lan"
+              required
+            ></select>
+          </label>
+
+          <label>
+            <span>Management interface</span>
+            <select
+              id="fw-mgmt"
+              required
+            ></select>
+          </label>
+
+          <label>
+            <span>Management TCP ports</span>
+            <input
+              id="fw-mgmt-ports"
+              type="text"
+              placeholder="22, 8443"
+              required
+            >
+          </label>
+        </div>
+
+        <h3 class="fw-subtitle">Policies</h3>
+
+        <div class="fw-form-grid">
+          <label>
+            <span>INPUT policy</span>
+            <select id="fw-input-policy">
+              <option value="drop">drop</option>
+              <option value="accept">accept</option>
+            </select>
+          </label>
+
+          <label>
+            <span>FORWARD policy</span>
+            <select id="fw-forward-policy">
+              <option value="drop">drop</option>
+              <option value="accept">accept</option>
+            </select>
+          </label>
+
+          <label>
+            <span>OUTPUT policy</span>
+            <select id="fw-output-policy">
+              <option value="accept">accept</option>
+              <option value="drop">drop</option>
+            </select>
+          </label>
+        </div>
+
+        <h3 class="fw-subtitle">Base rules</h3>
+
+        <div class="fw-form-grid">
+          <label class="fw-check">
+            <input
+              id="fw-icmp"
+              type="checkbox"
+            >
+            <span>Разрешать ICMP input</span>
+          </label>
+
+          <label class="fw-check">
+            <input
+              id="fw-dhcp"
+              type="checkbox"
+            >
+            <span>Разрешать DHCP server traffic</span>
+          </label>
+        </div>
+
+        <h3 class="fw-subtitle">Logging</h3>
+
+        <div class="fw-form-grid">
+          <label class="fw-check">
+            <input
+              id="fw-log-input"
+              type="checkbox"
+            >
+            <span>Логировать INPUT drop</span>
+          </label>
+
+          <label class="fw-check">
+            <input
+              id="fw-log-forward"
+              type="checkbox"
+            >
+            <span>Логировать FORWARD drop</span>
+          </label>
+
+          <label>
+            <span>Log rate</span>
+            <input
+              id="fw-log-rate"
+              type="text"
+              placeholder="10/second"
+            >
+          </label>
+
+          <label>
+            <span>Log burst</span>
+            <input
+              id="fw-log-burst"
+              type="number"
+              min="1"
+              max="10000"
+            >
+          </label>
+        </div>
+
+        <h3 class="fw-subtitle">Dynamic blacklist</h3>
+
+        <div class="fw-form-grid">
+          <label class="fw-check">
+            <input
+              id="fw-blacklist-enabled"
+              type="checkbox"
+            >
+            <span>Dynamic blacklist</span>
+          </label>
+
+          <label>
+            <span>Default timeout</span>
+            <input
+              id="fw-blacklist-timeout"
+              type="text"
+              placeholder="1h"
+            >
+          </label>
+
+          <label class="fw-wide">
+            <span>Protected networks</span>
+            <textarea
+              id="fw-protected-networks"
+              rows="3"
+              placeholder="192.168.100.0/24"
+            ></textarea>
+          </label>
+        </div>
+
+        <div class="fw-actions">
+          <button
+            id="fw-validate"
+            type="button"
+            class="secondary"
+          >Проверить</button>
+
+          <button
+            id="fw-apply"
+            type="submit"
+          >Применить</button>
+
+          <button
+            id="fw-reload"
+            type="button"
+            class="secondary"
+          >Перечитать</button>
+        </div>
+      </form>
+    `;
+
+    main.append(section);
+  }
+}
+
+
+function fwSetOptions(
+  selectId,
+  interfaces,
+  role,
+  selected
+) {
+  const select =
+    byId(selectId);
+
+  if (!select) {
+    return;
+  }
+
+  select.replaceChildren();
+
+  const matches =
+    (interfaces || []).filter(
+      (item) =>
+        item.role === role
+    );
+
+  for (const item of matches) {
+    const option =
+      document.createElement(
+        "option"
+      );
+
+    option.value =
+      item.name;
+
+    option.textContent =
+      item.name;
+
+    option.selected =
+      item.name === selected;
+
+    select.append(option);
+  }
+}
+
+
+function fwParseLines(value) {
+  return String(value || "")
+    .split(/[\n,]+/)
+    .map(
+      (item) => item.trim()
+    )
+    .filter(Boolean);
+}
+
+
+function fwParsePorts(value) {
+  const ports =
+    fwParseLines(value).map(
+      (item) => Number(item)
+    );
+
+  if (
+    ports.some(
+      (port) =>
+        !Number.isInteger(port)
+        || port < 1
+        || port > 65535
+    )
+  ) {
+    throw new Error(
+      "Management ports должны быть целыми числами 1..65535"
+    );
+  }
+
+  return [
+    ...new Set(ports),
+  ].sort(
+    (a, b) => a - b
+  );
+}
+
+
+function fwCandidate() {
+  const snapshot =
+    firewallConfigSnapshot;
+
+  if (!snapshot) {
+    throw new Error(
+      "Firewall configuration ещё не загружена"
+    );
+  }
+
+  const ports =
+    fwParsePorts(
+      byId("fw-mgmt-ports").value
+    );
+
+  if (!ports.includes(8443)) {
+    throw new Error(
+      "Порт 8443 должен оставаться разрешённым на MGMT"
+    );
+  }
+
+  return {
+    ...snapshot,
+    enabled: true,
+    wan_interface:
+      byId("fw-wan").value,
+    lan_interface:
+      byId("fw-lan").value,
+    management_interface:
+      byId("fw-mgmt").value,
+    management_tcp_ports:
+      ports,
+    allow_lan_to_wan:
+      byId("fw-lan-wan").checked,
+    allow_icmp_input:
+      byId("fw-icmp").checked,
+    allow_dhcp_server:
+      byId("fw-dhcp").checked,
+    enable_ipv4_forwarding:
+      byId("fw-ip-forward").checked,
+    enable_nat:
+      byId("fw-nat").checked,
+    log_dropped_input:
+      byId("fw-log-input").checked,
+    log_dropped_forward:
+      byId("fw-log-forward").checked,
+    log_rate:
+      byId("fw-log-rate").value.trim(),
+    log_burst:
+      Number(
+        byId("fw-log-burst").value
+      ),
+    dynamic_blacklist_enabled:
+      byId(
+        "fw-blacklist-enabled"
+      ).checked,
+    dynamic_blacklist_timeout:
+      byId(
+        "fw-blacklist-timeout"
+      ).value.trim(),
+    dynamic_blacklist_protected_networks:
+      fwParseLines(
+        byId(
+          "fw-protected-networks"
+        ).value
+      ),
+    input_policy:
+      byId(
+        "fw-input-policy"
+      ).value,
+    forward_policy:
+      byId(
+        "fw-forward-policy"
+      ).value,
+    output_policy:
+      byId(
+        "fw-output-policy"
+      ).value,
+  };
+}
+
+
+function fwFillConfig(
+  firewall,
+  interfaces
+) {
+  firewallConfigSnapshot = {
+    ...firewall,
+  };
+
+  fwSetOptions(
+    "fw-wan",
+    interfaces,
+    "wan",
+    firewall.wan_interface
+  );
+
+  fwSetOptions(
+    "fw-lan",
+    interfaces,
+    "lan",
+    firewall.lan_interface
+  );
+
+  fwSetOptions(
+    "fw-mgmt",
+    interfaces,
+    "mgmt",
+    firewall.management_interface
+  );
+
+  byId("fw-enabled").checked =
+    firewall.enabled;
+
+  byId("fw-ip-forward").checked =
+    firewall.enable_ipv4_forwarding;
+
+  byId("fw-nat").checked =
+    firewall.enable_nat;
+
+  byId("fw-lan-wan").checked =
+    firewall.allow_lan_to_wan;
+
+  byId("fw-icmp").checked =
+    firewall.allow_icmp_input;
+
+  byId("fw-dhcp").checked =
+    firewall.allow_dhcp_server;
+
+  byId("fw-log-input").checked =
+    firewall.log_dropped_input;
+
+  byId("fw-log-forward").checked =
+    firewall.log_dropped_forward;
+
+  byId("fw-log-rate").value =
+    firewall.log_rate || "";
+
+  byId("fw-log-burst").value =
+    firewall.log_burst;
+
+  byId(
+    "fw-blacklist-enabled"
+  ).checked =
+    firewall.dynamic_blacklist_enabled;
+
+  byId(
+    "fw-blacklist-timeout"
+  ).value =
+    firewall.dynamic_blacklist_timeout
+    || "";
+
+  byId(
+    "fw-protected-networks"
+  ).value =
+    (
+      firewall
+        .dynamic_blacklist_protected_networks
+      || []
+    ).join("\n");
+
+  byId("fw-input-policy").value =
+    firewall.input_policy;
+
+  byId("fw-forward-policy").value =
+    firewall.forward_policy;
+
+  byId("fw-output-policy").value =
+    firewall.output_policy;
+}
+
+
+async function fwLoadConfig() {
+  const state =
+    byId("fw-config-state");
+
+  const error =
+    byId("fw-config-error");
+
+  if (!state) {
+    return;
+  }
+
+  try {
+    state.textContent =
+      "Загрузка…";
+
+    if (error) {
+      error.textContent = "";
+    }
+
+    const data =
+      await fwRequest(
+        "firewall/config"
+      );
+
+    fwFillConfig(
+      data.firewall,
+      data.interfaces || []
+    );
+
+    state.textContent =
+      "Загружено";
+
+  } catch (err) {
+    state.textContent =
+      "Ошибка";
+
+    if (error) {
+      error.textContent =
+        err.message;
+    }
+  }
+}
+
+
+function fwFormatBytes(value) {
+  const number =
+    Number(value || 0);
+
+  if (number < 1024) {
+    return `${number} B`;
+  }
+
+  if (number < 1024 ** 2) {
+    return `${
+      (number / 1024).toFixed(1)
+    } KiB`;
+  }
+
+  return `${
+    (number / 1024 ** 2).toFixed(1)
+  } MiB`;
+}
+
+
+function fwDrawRuntime(runtime) {
+  byId("fw-mon-filter").textContent =
+    runtime.filter_table
+      ? "ACTIVE"
+      : "MISSING";
+
+  byId(
+    "fw-mon-forwarding"
+  ).textContent =
+    runtime.ipv4_forwarding
+      ? "ON"
+      : "OFF";
+
+  byId("fw-mon-nat").textContent =
+    runtime.nat_table
+      ? "ACTIVE"
+      : "OFF";
+
+  byId(
+    "fw-mon-blacklist"
+  ).textContent =
+    String(
+      runtime.blacklist_entries ?? 0
+    );
+
+  const tbody =
+    byId("fw-monitor-chains");
+
+  tbody.replaceChildren();
+
+  for (
+    const name
+    of ["input", "forward", "output"]
+  ) {
+    const chain =
+      runtime.chains?.[name] || {};
+
+    const counters =
+      runtime.counters?.[name]
+      || {};
+
+    const row =
+      document.createElement("tr");
+
+    for (const value of [
+      name.toUpperCase(),
+      chain.policy || "—",
+      runtime.rule_counts?.[name]
+        ?? 0,
+      counters.packets ?? 0,
+      fwFormatBytes(
+        counters.bytes
+      ),
+    ]) {
+      const cell =
+        document.createElement("td");
+
+      cell.textContent =
+        String(value);
+
+      row.append(cell);
+    }
+
+    tbody.append(row);
+  }
+
+  const target =
+    byId(
+      "fw-monitor-nat-ifaces"
+    );
+
+  target.replaceChildren();
+
+  const interfaces =
+    runtime.masquerade_interfaces
+    || [];
+
+  if (!interfaces.length) {
+    const text =
+      document.createElement("span");
+
+    text.className = "hint";
+    text.textContent =
+      "Masquerade interfaces отсутствуют";
+
+    target.append(text);
+
+    return;
+  }
+
+  for (const iface of interfaces) {
+    const chip =
+      document.createElement("code");
+
+    chip.textContent =
+      iface;
+
+    target.append(chip);
+  }
+}
+
+
+async function fwLoadRuntime() {
+  const error =
+    byId("fw-monitor-error");
+
+  if (!byId("fw-monitor-chains")) {
+    return;
+  }
+
+  try {
+    if (error) {
+      error.textContent = "";
+    }
+
+    const data =
+      await fwRequest(
+        "firewall/runtime"
+      );
+
+    fwDrawRuntime(
+      data.runtime
+    );
+
+  } catch (err) {
+    if (error) {
+      error.textContent =
+        `Не удалось получить Firewall runtime: ${
+          err.message
+        }`;
+    }
+  }
+}
+
+
+async function fwValidate() {
+  const state =
+    byId("fw-config-state");
+
+  const error =
+    byId("fw-config-error");
+
+  try {
+    const candidate =
+      fwCandidate();
+
+    if (error) {
+      error.textContent = "";
+    }
+
+    state.textContent =
+      "Проверка…";
+
+    await fwRequest(
+      "firewall/config/validate",
+      {
+        method: "POST",
+        headers: {
+          "Content-Type":
+            "application/json",
+        },
+        body: JSON.stringify(
+          candidate
+        ),
+      }
+    );
+
+    state.textContent =
+      "Конфигурация корректна";
+
+    return true;
+
+  } catch (err) {
+    state.textContent =
+      "Ошибка";
+
+    if (error) {
+      error.textContent =
+        err.message;
+    }
+
+    return false;
+  }
+}
+
+
+async function fwApply(event) {
+  event?.preventDefault();
+
+  if (firewallBusy) {
+    return;
+  }
+
+  const valid =
+    await fwValidate();
+
+  if (!valid) {
+    return;
+  }
+
+  if (
+    !window.confirm(
+      "Применить конфигурацию Firewall?\n\n"
+      + "Правила nftables будут перегенерированы."
+    )
+  ) {
+    return;
+  }
+
+  const state =
+    byId("fw-config-state");
+
+  const error =
+    byId("fw-config-error");
+
+  firewallBusy = true;
+
+  try {
+    state.textContent =
+      "Применение…";
+
+    const candidate =
+      fwCandidate();
+
+    await fwRequest(
+      "firewall/config/apply",
+      {
+        method: "POST",
+        headers: {
+          "Content-Type":
+            "application/json",
+        },
+        body: JSON.stringify(
+          candidate
+        ),
+      }
+    );
+
+    state.textContent =
+      "Применено";
+
+    await fwLoadConfig();
+
+  } catch (err) {
+    state.textContent =
+      "Ошибка";
+
+    if (error) {
+      error.textContent =
+        err.message;
+    }
+
+  } finally {
+    firewallBusy = false;
+  }
+}
+
+
+function fwBindUi() {
+  byId("fw-monitor-refresh")
+    ?.addEventListener(
+      "click",
+      fwLoadRuntime
+    );
+
+  byId("fw-reload")
+    ?.addEventListener(
+      "click",
+      fwLoadConfig
+    );
+
+  byId("fw-validate")
+    ?.addEventListener(
+      "click",
+      fwValidate
+    );
+
+  byId("fw-form")
+    ?.addEventListener(
+      "submit",
+      fwApply
+    );
+}
+
+
+window.setInterval(
+  () => {
+    if (
+      secboxCurrentPath()
+      === "/monitoring/firewall"
+    ) {
+      fwLoadRuntime();
+    }
+  },
+  10000
+);
