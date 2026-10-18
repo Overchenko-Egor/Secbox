@@ -12,6 +12,10 @@ from secbox.modules.ids.policy import (
     PolicyAction,
     PolicyDecision,
 )
+from secbox.modules.ids.action_client import (
+    IdsActionClientError,
+)
+
 from secbox.modules.ids.response import (
     IdsResponseError,
     IdsResponseHandler,
@@ -165,31 +169,25 @@ def test_block_candidate_calls_blacklist_when_enabled() -> None:
     )
 
     assert (
-        call["timeout"]
-        == "15m"
+        call["signature_id"]
+        == 100001
     )
 
     assert (
-        call["source"]
-        == "ids"
+        call["severity"]
+        == 1
     )
 
-    assert call[
-        "protected_networks"
-    ] == [
-        "192.168.100.0/24",
-        "192.168.1.63/32",
-        "192.168.50.1/32",
-        "192.168.100.2/32",
-    ]
-
-    reason = str(
-        call["reason"]
+    assert (
+        call["count"]
+        == 5
     )
 
-    assert "sid=100001" in reason
-    assert "severity=1" in reason
-    assert "count=5" in reason
+    assert "timeout" not in call
+    assert "source" not in call
+    assert "protected_networks" not in call
+
+    assert "reason" not in call
 
 
 def test_blacklist_error_becomes_ids_response_error() -> None:
@@ -198,8 +196,8 @@ def test_blacklist_error_becomes_ids_response_error() -> None:
     def fake_add(
         **kwargs: object,
     ) -> None:
-        raise BlacklistError(
-            "simulated nftables failure"
+        raise IdsActionClientError(
+            "simulated privileged helper failure"
         )
 
     handler = IdsResponseHandler(
@@ -223,8 +221,8 @@ def test_blacklist_error_becomes_ids_response_error() -> None:
         )
 
 
-def test_protected_networks_are_forwarded_to_blacklist() -> None:
-    """Response layer must not bypass final blacklist protection."""
+def test_protected_networks_are_not_forwarded_to_helper() -> None:
+    """Privileged helper must derive protected networks itself."""
 
     calls: list[
         dict[str, object]
@@ -240,10 +238,7 @@ def test_protected_networks_are_forwarded_to_blacklist() -> None:
         automatic_blackhole_timeout="15m",
         protected_networks=(
             "127.0.0.1/32",
-            "192.168.1.63/32",
-            "192.168.50.1/32",
             "192.168.100.0/24",
-            "192.168.100.2/32",
         ),
         blacklist_add=fake_add,
     )
@@ -256,15 +251,15 @@ def test_protected_networks_are_forwarded_to_blacklist() -> None:
 
     assert len(calls) == 1
 
-    assert calls[0][
+    assert (
         "protected_networks"
-    ] == [
-        "127.0.0.1/32",
-        "192.168.1.63/32",
-        "192.168.50.1/32",
-        "192.168.100.0/24",
-        "192.168.100.2/32",
-    ]
+        not in calls[0]
+    )
+
+    assert (
+        "timeout"
+        not in calls[0]
+    )
 
 
 @pytest.mark.parametrize(

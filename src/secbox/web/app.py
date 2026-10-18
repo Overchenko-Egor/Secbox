@@ -120,6 +120,28 @@ class BodyLimitMiddleware:
         await self.app(scope, replay, send)
 
 
+from secbox.modules.ids.config import IdsConfig
+from secbox.web.ids_actions import (
+    IdsWebActionBusyError,
+    IdsWebActionError,
+    IdsWebActionTimeoutError,
+    apply_ids_via_helper,
+    get_ids_runtime_via_helper,
+    get_ids_via_helper,
+    validate_ids_via_helper,
+)
+
+
+from secbox.web.blackhole_api import (
+    router as blackhole_api_router,
+)
+
+
+from secbox.web.system_api import (
+    router as system_api_router,
+)
+
+
 def create_app(settings: WebSettings | None = None) -> FastAPI:
     settings = settings or WebSettings.from_environment()
     store = ConfigStore(settings.config_path)
@@ -336,6 +358,131 @@ def create_app(settings: WebSettings | None = None) -> FastAPI:
             "managed_feed_enabled": (
                 result.managed_feed_enabled
             ),
+        }
+
+
+    @router.get(
+        "/api/v1/ids/config",
+        tags=["ids"],
+    )
+    def get_ids_web_config(
+    ) -> dict[str, object]:
+        try:
+            ids = get_ids_via_helper()
+
+        except IdsWebActionTimeoutError as error:
+            raise HTTPException(
+                504,
+                "IDS configuration read timed out",
+            ) from error
+
+        except IdsWebActionError as error:
+            raise HTTPException(
+                503,
+                str(error),
+            ) from error
+
+        return {
+            "ids": ids.model_dump(
+                mode="json"
+            )
+        }
+
+
+    @router.get(
+        "/api/v1/ids/runtime",
+        tags=["ids"],
+    )
+    def get_ids_web_runtime(
+    ) -> dict[str, object]:
+        try:
+            runtime = (
+                get_ids_runtime_via_helper()
+            )
+
+        except IdsWebActionTimeoutError as error:
+            raise HTTPException(
+                504,
+                "IDS runtime read timed out",
+            ) from error
+
+        except IdsWebActionError as error:
+            raise HTTPException(
+                503,
+                str(error),
+            ) from error
+
+        return {
+            "runtime": runtime,
+        }
+
+
+    @router.post(
+        "/api/v1/ids/config/validate",
+        tags=["ids"],
+    )
+    def validate_ids_web_config(
+        ids: IdsConfig,
+    ) -> dict[str, bool]:
+        try:
+            validate_ids_via_helper(
+                ids
+            )
+
+        except IdsWebActionTimeoutError as error:
+            raise HTTPException(
+                504,
+                str(error),
+            ) from error
+
+        except IdsWebActionError as error:
+            raise HTTPException(
+                422,
+                str(error),
+            ) from error
+
+        return {
+            "valid": True,
+        }
+
+
+    @router.post(
+        "/api/v1/ids/config/apply",
+        tags=["ids"],
+    )
+    def apply_ids_web_config(
+        ids: IdsConfig,
+    ) -> dict[str, object]:
+        try:
+            result = apply_ids_via_helper(
+                ids
+            )
+
+        except IdsWebActionBusyError as error:
+            raise HTTPException(
+                409,
+                str(error),
+            ) from error
+
+        except IdsWebActionTimeoutError as error:
+            raise HTTPException(
+                504,
+                str(error),
+            ) from error
+
+        except IdsWebActionError as error:
+            raise HTTPException(
+                422,
+                str(error),
+            ) from error
+
+        return {
+            "enabled":
+                result.enabled,
+            "automatic_blackhole_enabled":
+                result.automatic_blackhole_enabled,
+            "automatic_blackhole_timeout":
+                result.automatic_blackhole_timeout,
         }
 
 
@@ -1082,6 +1229,14 @@ def create_app(settings: WebSettings | None = None) -> FastAPI:
     @router.get("/api/v1/openapi.json", include_in_schema=False)
     def api_schema() -> dict[str, Any]:
         return app.openapi()
+
+    router.include_router(
+        blackhole_api_router
+    )
+
+    router.include_router(
+        system_api_router
+    )
 
     app.include_router(router)
     return app

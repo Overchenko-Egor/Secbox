@@ -3639,6 +3639,2542 @@ function cfBindUi() {
 }
 
 
+
+let idsCurrentConfig = null;
+
+
+function idsEscape(value) {
+  return String(value ?? "")
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#039;");
+}
+
+
+async function idsRequest(url, options = {}) {
+  const response = await fetch(url, {
+    credentials: "same-origin",
+    ...options,
+  });
+
+  let data = null;
+
+  try {
+    data = await response.json();
+  } catch (_) {
+    data = null;
+  }
+
+  if (!response.ok) {
+    throw new Error(
+      data?.detail || `HTTP ${response.status}`
+    );
+  }
+
+  return data;
+}
+
+
+function idsCreatePages() {
+  const main = document.getElementById("app-main");
+
+  if (!main) return;
+
+  if (!main.querySelector(
+    '[data-secbox-page="monitor-ids"]'
+  )) {
+    const monitor = document.createElement("section");
+
+    monitor.className = "panel ids-page";
+    monitor.dataset.secboxPage = "monitor-ids";
+
+    monitor.innerHTML = `
+      <div class="section-heading">
+        <div>
+          <p class="eyebrow">Обнаружение угроз</p>
+          <h2>IDS / IPS</h2>
+        </div>
+        <button id="ids-monitor-refresh"
+                type="button">
+          Обновить
+        </button>
+      </div>
+
+      <div id="ids-monitor-message"></div>
+
+      <div class="ids-status-grid">
+        <article class="ids-stat">
+          <span>SecBox IDS</span>
+          <strong id="ids-runtime-processor">—</strong>
+          <small id="ids-runtime-configured">—</small>
+        </article>
+
+        <article class="ids-stat">
+          <span>Suricata</span>
+          <strong id="ids-runtime-suricata">—</strong>
+          <small id="ids-runtime-rule-state">—</small>
+        </article>
+
+        <article class="ids-stat">
+          <span>Alerts</span>
+          <strong id="ids-runtime-alerts">—</strong>
+          <small id="ids-runtime-suppressed">—</small>
+        </article>
+
+        <article class="ids-stat">
+          <span>Capture drops</span>
+          <strong id="ids-runtime-drops">—</strong>
+          <small id="ids-runtime-packets">—</small>
+        </article>
+      </div>
+
+      <div class="ids-detail-grid">
+        <article>
+          <h3>Правила</h3>
+          <dl class="ids-kv">
+            <div>
+              <dt>Loaded</dt>
+              <dd id="ids-rules-loaded">—</dd>
+            </div>
+            <div>
+              <dt>Failed</dt>
+              <dd id="ids-rules-failed">—</dd>
+            </div>
+            <div>
+              <dt>Skipped</dt>
+              <dd id="ids-rules-skipped">—</dd>
+            </div>
+            <div>
+              <dt>Last reload</dt>
+              <dd id="ids-rules-reload">—</dd>
+            </div>
+          </dl>
+        </article>
+
+        <article>
+          <h3>Последнее окно EVE</h3>
+          <dl class="ids-kv">
+            <div>
+              <dt>Размер EVE</dt>
+              <dd id="ids-eve-size">—</dd>
+            </div>
+            <div>
+              <dt>Проверено</dt>
+              <dd id="ids-eve-window">—</dd>
+            </div>
+            <div>
+              <dt>Alerts в окне</dt>
+              <dd id="ids-eve-alerts">—</dd>
+            </div>
+            <div>
+              <dt>Severity</dt>
+              <dd id="ids-severity">—</dd>
+            </div>
+          </dl>
+        </article>
+      </div>
+
+      <div class="ids-section">
+        <h3>Наиболее частые сигнатуры</h3>
+        <div id="ids-top-signatures"
+             class="ids-signatures"></div>
+      </div>
+
+      <div class="ids-section">
+        <h3>Последние события</h3>
+        <div class="table-wrap">
+          <table class="ids-table">
+            <thead>
+              <tr>
+                <th>Время</th>
+                <th>Sev</th>
+                <th>SID</th>
+                <th>Источник</th>
+                <th>Назначение</th>
+                <th>Сигнатура</th>
+              </tr>
+            </thead>
+            <tbody id="ids-alerts-body"></tbody>
+          </table>
+        </div>
+      </div>
+    `;
+
+    main.append(monitor);
+  }
+
+  if (!main.querySelector(
+    '[data-secbox-page="manage-ids"]'
+  )) {
+    const manage = document.createElement("section");
+
+    manage.className = "panel ids-page";
+    manage.dataset.secboxPage = "manage-ids";
+
+    manage.innerHTML = `
+      <div class="section-heading">
+        <div>
+          <p class="eyebrow">Управление</p>
+          <h2>IDS / IPS</h2>
+        </div>
+        <span id="ids-config-state"
+              class="tag">
+          Загрузка…
+        </span>
+      </div>
+
+      <div id="ids-config-message"></div>
+
+      <form id="ids-form">
+        <div class="ids-form-grid">
+
+          <label class="ids-check ids-wide">
+            <input id="ids-enabled"
+                   type="checkbox">
+            <span>
+              SecBox IDS processor включён
+            </span>
+          </label>
+
+          <label>
+            <span>NAT correlation window, ms</span>
+            <input id="ids-nat-window"
+                   type="number"
+                   min="1"
+                   max="5000"
+                   required>
+          </label>
+
+          <label>
+            <span>Aggregation window, sec</span>
+            <input id="ids-aggregation-window"
+                   type="number"
+                   min="1"
+                   max="3600"
+                   required>
+          </label>
+
+          <label>
+            <span>Минимум событий для ALERT</span>
+            <input id="ids-min-alert-count"
+                   type="number"
+                   min="1"
+                   required>
+          </label>
+
+          <label>
+            <span>Минимум событий для BLOCK</span>
+            <input id="ids-min-block-count"
+                   type="number"
+                   min="1"
+                   required>
+          </label>
+
+          <label>
+            <span>Макс. severity для ALERT</span>
+            <select id="ids-max-alert-severity">
+              <option value="1">1 — высокая</option>
+              <option value="2">2 — средняя</option>
+              <option value="3">3 — низкая</option>
+            </select>
+          </label>
+
+          <label>
+            <span>Макс. severity для BLOCK</span>
+            <select id="ids-max-block-severity">
+              <option value="1">1 — высокая</option>
+              <option value="2">2 — средняя</option>
+              <option value="3">3 — низкая</option>
+            </select>
+          </label>
+
+          <label class="ids-check ids-wide">
+            <input id="ids-auto-blackhole"
+                   type="checkbox">
+            <span>
+              Автоматический Dynamic Blackhole
+            </span>
+          </label>
+
+          <label>
+            <span>Blackhole timeout</span>
+            <input id="ids-blackhole-timeout"
+                   type="text"
+                   maxlength="32"
+                   placeholder="15m"
+                   required>
+          </label>
+
+          <label>
+            <span>EVE log</span>
+            <input id="ids-eve-path"
+                   type="text"
+                   readonly>
+          </label>
+
+        </div>
+
+        <div class="ids-warning">
+          Автоблокировка применяется только к
+          повторным входящим WAN-событиям,
+          прошедшим policy thresholds.
+          Адреса SecBox и protected networks
+          не блокируются.
+        </div>
+
+        <div class="ids-actions">
+          <button id="ids-reload"
+                  type="button">
+            Перечитать
+          </button>
+
+          <button id="ids-validate"
+                  type="button">
+            Проверить
+          </button>
+
+          <button id="ids-apply"
+                  type="submit">
+            Применить
+          </button>
+        </div>
+      </form>
+    `;
+
+    main.append(manage);
+  }
+}
+
+
+function idsFormatBytes(value) {
+  const number = Number(value);
+
+  if (!Number.isFinite(number)) {
+    return "—";
+  }
+
+  if (number < 1024) {
+    return `${number} B`;
+  }
+
+  if (number < 1024 * 1024) {
+    return `${(number / 1024).toFixed(1)} KiB`;
+  }
+
+  return `${(
+    number / 1024 / 1024
+  ).toFixed(1)} MiB`;
+}
+
+
+async function idsLoadMonitoring() {
+  const message = document.getElementById(
+    "ids-monitor-message"
+  );
+
+  if (!message) return;
+
+  message.textContent = "Обновление…";
+  message.className = "";
+
+  try {
+    const data = await idsRequest(
+      "/api/v1/ids/runtime"
+    );
+
+    const runtime = data.runtime || {};
+    const services = runtime.services || {};
+    const stats = runtime.stats || {};
+
+    const processor = services.ids || {};
+    const suricata = services.suricata || {};
+
+    document.getElementById(
+      "ids-runtime-processor"
+    ).textContent =
+      `${processor.active_state || "unknown"} / ` +
+      `${processor.sub_state || "unknown"}`;
+
+    document.getElementById(
+      "ids-runtime-configured"
+    ).textContent =
+      runtime.configured_enabled
+        ? "Настроен как enabled"
+        : "Настроен как disabled";
+
+    document.getElementById(
+      "ids-runtime-suricata"
+    ).textContent =
+      `${suricata.active_state || "unknown"} / ` +
+      `${suricata.sub_state || "unknown"}`;
+
+    document.getElementById(
+      "ids-runtime-rule-state"
+    ).textContent =
+      stats.rules_failed === 0
+        ? "Ruleset загружен без ошибок"
+        : `${stats.rules_failed ?? "—"} ошибок ruleset`;
+
+    document.getElementById(
+      "ids-runtime-alerts"
+    ).textContent =
+      stats.alerts ?? "—";
+
+    document.getElementById(
+      "ids-runtime-suppressed"
+    ).textContent =
+      `Suppressed: ${stats.alerts_suppressed ?? "—"}`;
+
+    document.getElementById(
+      "ids-runtime-drops"
+    ).textContent =
+      stats.kernel_drops ?? "—";
+
+    document.getElementById(
+      "ids-runtime-packets"
+    ).textContent =
+      `Packets: ${stats.kernel_packets ?? "—"} · ` +
+      `${stats.kernel_drop_percent ?? "—"}%`;
+
+    document.getElementById(
+      "ids-rules-loaded"
+    ).textContent =
+      stats.rules_loaded ?? "—";
+
+    document.getElementById(
+      "ids-rules-failed"
+    ).textContent =
+      stats.rules_failed ?? "—";
+
+    document.getElementById(
+      "ids-rules-skipped"
+    ).textContent =
+      stats.rules_skipped ?? "—";
+
+    document.getElementById(
+      "ids-rules-reload"
+    ).textContent =
+      stats.last_rule_reload || "—";
+
+    document.getElementById(
+      "ids-eve-size"
+    ).textContent =
+      idsFormatBytes(
+        runtime.eve_size_bytes
+      );
+
+    document.getElementById(
+      "ids-eve-window"
+    ).textContent =
+      idsFormatBytes(
+        runtime.sample_window_bytes
+      );
+
+    document.getElementById(
+      "ids-eve-alerts"
+    ).textContent =
+      runtime.sampled_alert_count ?? "—";
+
+    const severities =
+      runtime.severity_counts || {};
+
+    document.getElementById(
+      "ids-severity"
+    ).textContent =
+      `1: ${severities["1"] || 0} · ` +
+      `2: ${severities["2"] || 0} · ` +
+      `3: ${severities["3"] || 0}`;
+
+    const signatures =
+      document.getElementById(
+        "ids-top-signatures"
+      );
+
+    signatures.innerHTML = "";
+
+    for (
+      const item
+      of runtime.top_signatures || []
+    ) {
+      const node =
+        document.createElement("div");
+
+      node.className =
+        "ids-signature-row";
+
+      node.innerHTML =
+        `<span>${idsEscape(item.signature)}</span>` +
+        `<strong>${Number(item.count) || 0}</strong>`;
+
+      signatures.append(node);
+    }
+
+    if (!signatures.children.length) {
+      signatures.textContent =
+        "В выбранном окне alerts отсутствуют.";
+    }
+
+    const body =
+      document.getElementById(
+        "ids-alerts-body"
+      );
+
+    body.innerHTML = "";
+
+    for (
+      const alert
+      of runtime.recent_alerts || []
+    ) {
+      const row =
+        document.createElement("tr");
+
+      const source =
+        `${alert.source_ip || "—"}` +
+        `${alert.source_port != null
+          ? `:${alert.source_port}`
+          : ""}`;
+
+      const destination =
+        `${alert.destination_ip || "—"}` +
+        `${alert.destination_port != null
+          ? `:${alert.destination_port}`
+          : ""}`;
+
+      row.innerHTML = `
+        <td>${idsEscape(alert.timestamp || "—")}</td>
+        <td>${idsEscape(alert.severity ?? "—")}</td>
+        <td>${idsEscape(alert.signature_id ?? "—")}</td>
+        <td>${idsEscape(source)}</td>
+        <td>${idsEscape(destination)}</td>
+        <td>${idsEscape(alert.signature || "—")}</td>
+      `;
+
+      body.append(row);
+    }
+
+    if (!body.children.length) {
+      const row =
+        document.createElement("tr");
+
+      row.innerHTML =
+        '<td colspan="6">Alerts отсутствуют.</td>';
+
+      body.append(row);
+    }
+
+    message.textContent =
+      "Runtime актуален.";
+
+    message.className = "good";
+
+  } catch (error) {
+    message.textContent =
+      `Ошибка IDS runtime: ${error.message}`;
+
+    message.className = "error";
+  }
+}
+
+
+function idsBuildCandidate() {
+  if (!idsCurrentConfig) {
+    throw new Error(
+      "IDS configuration is not loaded"
+    );
+  }
+
+  return {
+    ...idsCurrentConfig,
+
+    enabled:
+      document.getElementById(
+        "ids-enabled"
+      ).checked,
+
+    nat_correlation_window_ms:
+      Number(
+        document.getElementById(
+          "ids-nat-window"
+        ).value
+      ),
+
+    aggregation_window_seconds:
+      Number(
+        document.getElementById(
+          "ids-aggregation-window"
+        ).value
+      ),
+
+    policy: {
+      minimum_alert_count:
+        Number(
+          document.getElementById(
+            "ids-min-alert-count"
+          ).value
+        ),
+
+      minimum_block_count:
+        Number(
+          document.getElementById(
+            "ids-min-block-count"
+          ).value
+        ),
+
+      maximum_alert_severity:
+        Number(
+          document.getElementById(
+            "ids-max-alert-severity"
+          ).value
+        ),
+
+      maximum_block_severity:
+        Number(
+          document.getElementById(
+            "ids-max-block-severity"
+          ).value
+        ),
+    },
+
+    automatic_blackhole: {
+      enabled:
+        document.getElementById(
+          "ids-auto-blackhole"
+        ).checked,
+
+      timeout:
+        document.getElementById(
+          "ids-blackhole-timeout"
+        ).value.trim(),
+    },
+  };
+}
+
+
+async function idsLoadConfig() {
+  const message =
+    document.getElementById(
+      "ids-config-message"
+    );
+
+  const state =
+    document.getElementById(
+      "ids-config-state"
+    );
+
+  if (!message || !state) return;
+
+  state.textContent = "Загрузка…";
+
+  try {
+    const data = await idsRequest(
+      "/api/v1/ids/config"
+    );
+
+    idsCurrentConfig = data.ids;
+
+    document.getElementById(
+      "ids-enabled"
+    ).checked =
+      Boolean(data.ids.enabled);
+
+    document.getElementById(
+      "ids-nat-window"
+    ).value =
+      data.ids.nat_correlation_window_ms;
+
+    document.getElementById(
+      "ids-aggregation-window"
+    ).value =
+      data.ids.aggregation_window_seconds;
+
+    document.getElementById(
+      "ids-min-alert-count"
+    ).value =
+      data.ids.policy.minimum_alert_count;
+
+    document.getElementById(
+      "ids-min-block-count"
+    ).value =
+      data.ids.policy.minimum_block_count;
+
+    document.getElementById(
+      "ids-max-alert-severity"
+    ).value =
+      data.ids.policy.maximum_alert_severity;
+
+    document.getElementById(
+      "ids-max-block-severity"
+    ).value =
+      data.ids.policy.maximum_block_severity;
+
+    document.getElementById(
+      "ids-auto-blackhole"
+    ).checked =
+      Boolean(
+        data.ids
+          .automatic_blackhole
+          .enabled
+      );
+
+    document.getElementById(
+      "ids-blackhole-timeout"
+    ).value =
+      data.ids
+        .automatic_blackhole
+        .timeout;
+
+    document.getElementById(
+      "ids-eve-path"
+    ).value =
+      data.ids.eve_path;
+
+    state.textContent = "Загружено";
+
+    message.textContent =
+      "Текущая конфигурация IDS загружена.";
+
+    message.className = "good";
+
+  } catch (error) {
+    state.textContent = "Ошибка";
+
+    message.textContent =
+      error.message;
+
+    message.className = "error";
+  }
+}
+
+
+async function idsValidateConfig() {
+  const message =
+    document.getElementById(
+      "ids-config-message"
+    );
+
+  try {
+    const candidate =
+      idsBuildCandidate();
+
+    await idsRequest(
+      "/api/v1/ids/config/validate",
+      {
+        method: "POST",
+        headers: {
+          "Content-Type":
+            "application/json",
+        },
+        body: JSON.stringify(
+          candidate
+        ),
+      }
+    );
+
+    message.textContent =
+      "Конфигурация IDS корректна.";
+
+    message.className = "good";
+
+  } catch (error) {
+    message.textContent =
+      `Ошибка проверки: ${error.message}`;
+
+    message.className = "error";
+  }
+}
+
+
+async function idsApplyConfig(event) {
+  event.preventDefault();
+
+  const message =
+    document.getElementById(
+      "ids-config-message"
+    );
+
+  const button =
+    document.getElementById(
+      "ids-apply"
+    );
+
+  button.disabled = true;
+
+  try {
+    const candidate =
+      idsBuildCandidate();
+
+    await idsRequest(
+      "/api/v1/ids/config/apply",
+      {
+        method: "POST",
+        headers: {
+          "Content-Type":
+            "application/json",
+        },
+        body: JSON.stringify(
+          candidate
+        ),
+      }
+    );
+
+    idsCurrentConfig =
+      candidate;
+
+    message.textContent =
+      "IDS configuration применена.";
+
+    message.className = "good";
+
+    await Promise.all([
+      idsLoadConfig(),
+      idsLoadMonitoring(),
+    ]);
+
+  } catch (error) {
+    message.textContent =
+      `Ошибка применения: ${error.message}`;
+
+    message.className = "error";
+
+  } finally {
+    button.disabled = false;
+  }
+}
+
+
+function idsBindUi() {
+  const form =
+    document.getElementById(
+      "ids-form"
+    );
+
+  if (!form) return;
+
+  form.addEventListener(
+    "submit",
+    idsApplyConfig
+  );
+
+  document.getElementById(
+    "ids-reload"
+  )?.addEventListener(
+    "click",
+    idsLoadConfig
+  );
+
+  document.getElementById(
+    "ids-validate"
+  )?.addEventListener(
+    "click",
+    idsValidateConfig
+  );
+
+  document.getElementById(
+    "ids-monitor-refresh"
+  )?.addEventListener(
+    "click",
+    idsLoadMonitoring
+  );
+
+  idsLoadConfig();
+  idsLoadMonitoring();
+}
+
+
+
+// ============================================================
+// Dynamic Blackhole UI
+// ============================================================
+
+let bhPollTimer = null;
+
+
+function bhEscape(value) {
+  return String(value ?? "")
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;");
+}
+
+
+async function bhRequest(
+  url,
+  options = {}
+) {
+  const response = await fetch(
+    url,
+    {
+      credentials: "same-origin",
+      ...options,
+    }
+  );
+
+  let data = null;
+
+  try {
+    data = await response.json();
+  } catch (_) {
+    data = null;
+  }
+
+  if (!response.ok) {
+    throw new Error(
+      data?.detail ||
+      `HTTP ${response.status}`
+    );
+  }
+
+  return data;
+}
+
+
+function bhFormatDuration(seconds) {
+  const value = Number(seconds);
+
+  if (!Number.isFinite(value)) {
+    return "—";
+  }
+
+  if (value <= 0) {
+    return "expired";
+  }
+
+  const hours = Math.floor(
+    value / 3600
+  );
+
+  const minutes = Math.floor(
+    (value % 3600) / 60
+  );
+
+  const secs = Math.floor(
+    value % 60
+  );
+
+  if (hours > 0) {
+    return `${hours}h ${minutes}m`;
+  }
+
+  if (minutes > 0) {
+    return `${minutes}m ${secs}s`;
+  }
+
+  return `${secs}s`;
+}
+
+
+function bhCreatePages() {
+  const main =
+    document.getElementById(
+      "app-main"
+    );
+
+  if (!main) {
+    return;
+  }
+
+  if (!main.querySelector(
+    '[data-secbox-page="monitor-blackhole"]'
+  )) {
+    const page =
+      document.createElement(
+        "section"
+      );
+
+    page.className =
+      "panel bh-page";
+
+    page.dataset.secboxPage =
+      "monitor-blackhole";
+
+    page.innerHTML = `
+      <div class="section-heading">
+        <div>
+          <p class="eyebrow">
+            Dynamic Blackhole
+          </p>
+          <h2>Мониторинг блокировок</h2>
+        </div>
+
+        <button
+          id="bh-monitor-refresh"
+          type="button"
+        >
+          Обновить
+        </button>
+      </div>
+
+      <p
+        id="bh-monitor-message"
+        class="hint"
+      >
+        Загрузка…
+      </p>
+
+      <div class="bh-status-grid">
+        <article>
+          <span>Состояние</span>
+          <strong id="bh-enabled">—</strong>
+        </article>
+
+        <article>
+          <span>nft runtime</span>
+          <strong id="bh-runtime-count">—</strong>
+        </article>
+
+        <article>
+          <span>Persistent</span>
+          <strong id="bh-persistent-count">—</strong>
+        </article>
+
+        <article>
+          <span>Consistency</span>
+          <strong id="bh-consistency">—</strong>
+        </article>
+      </div>
+
+      <div class="bh-section">
+        <h3>Protected networks</h3>
+        <div
+          id="bh-protected"
+          class="bh-protected"
+        ></div>
+      </div>
+
+      <div class="bh-section">
+        <h3>Активные блокировки</h3>
+
+        <div class="table-wrap">
+          <table class="bh-table">
+            <thead>
+              <tr>
+                <th>IPv4</th>
+                <th>Источник</th>
+                <th>Причина</th>
+                <th>Создано</th>
+                <th>Истекает</th>
+                <th>TTL</th>
+                <th>nft</th>
+              </tr>
+            </thead>
+
+            <tbody
+              id="bh-monitor-body"
+            ></tbody>
+          </table>
+        </div>
+      </div>
+    `;
+
+    main.append(page);
+  }
+
+  if (!main.querySelector(
+    '[data-secbox-page="manage-blackhole"]'
+  )) {
+    const page =
+      document.createElement(
+        "section"
+      );
+
+    page.className =
+      "panel bh-page";
+
+    page.dataset.secboxPage =
+      "manage-blackhole";
+
+    page.innerHTML = `
+      <div class="section-heading">
+        <div>
+          <p class="eyebrow">
+            Dynamic Blackhole
+          </p>
+          <h2>Управление блокировками</h2>
+        </div>
+
+        <button
+          id="bh-manage-refresh"
+          type="button"
+        >
+          Перечитать
+        </button>
+      </div>
+
+      <p
+        id="bh-manage-message"
+        class="hint"
+      ></p>
+
+      <form id="bh-add-form">
+        <div class="bh-form-grid">
+          <label>
+            <span>IPv4 address</span>
+            <input
+              id="bh-address"
+              type="text"
+              placeholder="203.0.113.10"
+              required
+            >
+          </label>
+
+          <label>
+            <span>Timeout</span>
+            <input
+              id="bh-timeout"
+              type="text"
+              placeholder="1h"
+              required
+            >
+          </label>
+
+          <label class="bh-wide">
+            <span>Причина</span>
+            <input
+              id="bh-reason"
+              type="text"
+              maxlength="160"
+              value="manual"
+              required
+            >
+          </label>
+        </div>
+
+        <div class="bh-actions">
+          <button
+            type="submit"
+            id="bh-add"
+          >
+            Добавить блокировку
+          </button>
+
+          <button
+            type="button"
+            id="bh-reconcile"
+            class="secondary"
+          >
+            Reconcile
+          </button>
+        </div>
+      </form>
+
+      <div class="bh-warning">
+        Локальные адреса SecBox и protected networks
+        проверяются повторно root action helper'ом.
+        Web-процесс не изменяет nftables напрямую.
+      </div>
+
+      <div class="bh-section">
+        <h3>Текущие записи</h3>
+
+        <div class="table-wrap">
+          <table class="bh-table">
+            <thead>
+              <tr>
+                <th>IPv4</th>
+                <th>Источник</th>
+                <th>Причина</th>
+                <th>TTL</th>
+                <th>nft</th>
+                <th></th>
+              </tr>
+            </thead>
+
+            <tbody
+              id="bh-manage-body"
+            ></tbody>
+          </table>
+        </div>
+      </div>
+    `;
+
+    main.append(page);
+  }
+}
+
+
+function bhCell(
+  row,
+  value
+) {
+  const cell =
+    document.createElement(
+      "td"
+    );
+
+  cell.textContent =
+    String(
+      value ?? "—"
+    );
+
+  row.append(cell);
+
+  return cell;
+}
+
+
+function bhRenderRuntime(runtime) {
+  const enabled =
+    document.getElementById(
+      "bh-enabled"
+    );
+
+  if (enabled) {
+    enabled.textContent =
+      runtime.enabled
+        ? "Enabled"
+        : "Disabled";
+  }
+
+  const runtimeCount =
+    document.getElementById(
+      "bh-runtime-count"
+    );
+
+  if (runtimeCount) {
+    runtimeCount.textContent =
+      runtime.runtime_count ?? "—";
+  }
+
+  const persistentCount =
+    document.getElementById(
+      "bh-persistent-count"
+    );
+
+  if (persistentCount) {
+    persistentCount.textContent =
+      runtime.persistent_count ?? "—";
+  }
+
+  const consistency =
+    document.getElementById(
+      "bh-consistency"
+    );
+
+  if (consistency) {
+    consistency.textContent =
+      runtime.consistent
+        ? "OK"
+        : "Mismatch";
+
+    consistency.className =
+      runtime.consistent
+        ? "good"
+        : "error";
+  }
+
+  const protectedBox =
+    document.getElementById(
+      "bh-protected"
+    );
+
+  if (protectedBox) {
+    protectedBox.replaceChildren();
+
+    for (
+      const network
+      of runtime.protected_networks || []
+    ) {
+      const tag =
+        document.createElement(
+          "code"
+        );
+
+      tag.textContent =
+        network;
+
+      protectedBox.append(
+        tag
+      );
+    }
+
+    if (
+      !protectedBox.children.length
+    ) {
+      protectedBox.textContent =
+        "Не настроены";
+    }
+  }
+
+  const timeout =
+    document.getElementById(
+      "bh-timeout"
+    );
+
+  if (
+    timeout &&
+    !timeout.dataset.userChanged
+  ) {
+    timeout.value =
+      runtime.default_timeout || "1h";
+  }
+
+  bhRenderMonitorTable(
+    runtime.entries || []
+  );
+
+  bhRenderManageTable(
+    runtime.entries || []
+  );
+}
+
+
+function bhRenderMonitorTable(entries) {
+  const body =
+    document.getElementById(
+      "bh-monitor-body"
+    );
+
+  if (!body) {
+    return;
+  }
+
+  body.replaceChildren();
+
+  for (const entry of entries) {
+    const row =
+      document.createElement(
+        "tr"
+      );
+
+    bhCell(
+      row,
+      entry.address
+    );
+
+    bhCell(
+      row,
+      entry.source
+    );
+
+    bhCell(
+      row,
+      entry.reason
+    );
+
+    bhCell(
+      row,
+      entry.created_at
+    );
+
+    bhCell(
+      row,
+      entry.expires_at
+    );
+
+    bhCell(
+      row,
+      bhFormatDuration(
+        entry.remaining_seconds
+      )
+    );
+
+    bhCell(
+      row,
+      entry.runtime_present
+        ? "present"
+        : "missing"
+    );
+
+    body.append(row);
+  }
+
+  if (!entries.length) {
+    const row =
+      document.createElement(
+        "tr"
+      );
+
+    const cell =
+      document.createElement(
+        "td"
+      );
+
+    cell.colSpan = 7;
+
+    cell.textContent =
+      "Активных блокировок нет.";
+
+    row.append(cell);
+    body.append(row);
+  }
+}
+
+
+function bhRenderManageTable(entries) {
+  const body =
+    document.getElementById(
+      "bh-manage-body"
+    );
+
+  if (!body) {
+    return;
+  }
+
+  body.replaceChildren();
+
+  for (const entry of entries) {
+    const row =
+      document.createElement(
+        "tr"
+      );
+
+    bhCell(
+      row,
+      entry.address
+    );
+
+    bhCell(
+      row,
+      entry.source
+    );
+
+    bhCell(
+      row,
+      entry.reason
+    );
+
+    bhCell(
+      row,
+      bhFormatDuration(
+        entry.remaining_seconds
+      )
+    );
+
+    bhCell(
+      row,
+      entry.runtime_present
+        ? "present"
+        : "missing"
+    );
+
+    const actionCell =
+      document.createElement(
+        "td"
+      );
+
+    const button =
+      document.createElement(
+        "button"
+      );
+
+    button.type =
+      "button";
+
+    button.className =
+      "secondary";
+
+    button.textContent =
+      "Удалить";
+
+    button.addEventListener(
+      "click",
+      async () => {
+        await bhDelete(
+          entry.address
+        );
+      }
+    );
+
+    actionCell.append(
+      button
+    );
+
+    row.append(
+      actionCell
+    );
+
+    body.append(row);
+  }
+
+  if (!entries.length) {
+    const row =
+      document.createElement(
+        "tr"
+      );
+
+    const cell =
+      document.createElement(
+        "td"
+      );
+
+    cell.colSpan = 6;
+
+    cell.textContent =
+      "Записей нет.";
+
+    row.append(cell);
+    body.append(row);
+  }
+}
+
+
+async function bhLoadRuntime() {
+  const monitorMessage =
+    document.getElementById(
+      "bh-monitor-message"
+    );
+
+  const manageMessage =
+    document.getElementById(
+      "bh-manage-message"
+    );
+
+  try {
+    const data =
+      await bhRequest(
+        "/api/v1/blackhole/runtime"
+      );
+
+    bhRenderRuntime(
+      data.runtime || {}
+    );
+
+    if (monitorMessage) {
+      monitorMessage.textContent =
+        "Runtime актуален.";
+
+      monitorMessage.className =
+        "good";
+    }
+
+    if (manageMessage) {
+      manageMessage.textContent =
+        "Состояние загружено.";
+
+      manageMessage.className =
+        "good";
+    }
+
+  } catch (error) {
+    if (monitorMessage) {
+      monitorMessage.textContent =
+        `Ошибка: ${error.message}`;
+
+      monitorMessage.className =
+        "error";
+    }
+
+    if (manageMessage) {
+      manageMessage.textContent =
+        `Ошибка: ${error.message}`;
+
+      manageMessage.className =
+        "error";
+    }
+  }
+}
+
+
+async function bhAdd(event) {
+  event.preventDefault();
+
+  const message =
+    document.getElementById(
+      "bh-manage-message"
+    );
+
+  const button =
+    document.getElementById(
+      "bh-add"
+    );
+
+  button.disabled = true;
+
+  try {
+    await bhRequest(
+      "/api/v1/blackhole/add",
+      {
+        method: "POST",
+        headers: {
+          "Content-Type":
+            "application/json",
+        },
+        body: JSON.stringify(
+          {
+            address:
+              document.getElementById(
+                "bh-address"
+              ).value.trim(),
+
+            timeout:
+              document.getElementById(
+                "bh-timeout"
+              ).value.trim(),
+
+            reason:
+              document.getElementById(
+                "bh-reason"
+              ).value.trim(),
+          }
+        ),
+      }
+    );
+
+    document.getElementById(
+      "bh-address"
+    ).value = "";
+
+    message.textContent =
+      "Блокировка добавлена.";
+
+    message.className =
+      "good";
+
+    await bhLoadRuntime();
+
+  } catch (error) {
+    message.textContent =
+      `Ошибка добавления: ${error.message}`;
+
+    message.className =
+      "error";
+
+  } finally {
+    button.disabled = false;
+  }
+}
+
+
+async function bhDelete(address) {
+  const message =
+    document.getElementById(
+      "bh-manage-message"
+    );
+
+  try {
+    await bhRequest(
+      "/api/v1/blackhole/delete",
+      {
+        method: "POST",
+        headers: {
+          "Content-Type":
+            "application/json",
+        },
+        body: JSON.stringify(
+          {
+            address,
+          }
+        ),
+      }
+    );
+
+    if (message) {
+      message.textContent =
+        `Удалено: ${address}`;
+
+      message.className =
+        "good";
+    }
+
+    await bhLoadRuntime();
+
+  } catch (error) {
+    if (message) {
+      message.textContent =
+        `Ошибка удаления: ${error.message}`;
+
+      message.className =
+        "error";
+    }
+  }
+}
+
+
+async function bhReconcile() {
+  const message =
+    document.getElementById(
+      "bh-manage-message"
+    );
+
+  try {
+    const result =
+      await bhRequest(
+        "/api/v1/blackhole/reconcile",
+        {
+          method: "POST",
+        }
+      );
+
+    if (message) {
+      message.textContent =
+        `Reconcile завершён: restored ${result.restored}, ` +
+        `expired ${result.expired_removed}.`;
+
+      message.className =
+        "good";
+    }
+
+    await bhLoadRuntime();
+
+  } catch (error) {
+    if (message) {
+      message.textContent =
+        `Ошибка reconcile: ${error.message}`;
+
+      message.className =
+        "error";
+    }
+  }
+}
+
+
+function bhBindUi() {
+  const monitor =
+    document.querySelector(
+      '[data-secbox-page="monitor-blackhole"]'
+    );
+
+  const manage =
+    document.querySelector(
+      '[data-secbox-page="manage-blackhole"]'
+    );
+
+  if (
+    monitor &&
+    monitor.dataset.bound !== "true"
+  ) {
+    monitor.dataset.bound =
+      "true";
+
+    document.getElementById(
+      "bh-monitor-refresh"
+    )?.addEventListener(
+      "click",
+      bhLoadRuntime
+    );
+  }
+
+  if (
+    manage &&
+    manage.dataset.bound !== "true"
+  ) {
+    manage.dataset.bound =
+      "true";
+
+    document.getElementById(
+      "bh-add-form"
+    )?.addEventListener(
+      "submit",
+      bhAdd
+    );
+
+    document.getElementById(
+      "bh-manage-refresh"
+    )?.addEventListener(
+      "click",
+      bhLoadRuntime
+    );
+
+    document.getElementById(
+      "bh-reconcile"
+    )?.addEventListener(
+      "click",
+      bhReconcile
+    );
+
+    document.getElementById(
+      "bh-timeout"
+    )?.addEventListener(
+      "input",
+      (event) => {
+        event.target.dataset.userChanged =
+          "true";
+      }
+    );
+  }
+
+  if (monitor || manage) {
+    bhLoadRuntime();
+
+    if (!bhPollTimer) {
+      bhPollTimer =
+        window.setInterval(
+          bhLoadRuntime,
+          10000
+        );
+    }
+  }
+}
+
+
+
+// ============================================================
+// System Monitoring / Management
+// ============================================================
+
+let sysPollTimer = null;
+
+
+function sysBytes(value) {
+  const number = Number(value);
+
+  if (!Number.isFinite(number)) {
+    return "—";
+  }
+
+  const units = [
+    "B",
+    "KiB",
+    "MiB",
+    "GiB",
+    "TiB",
+  ];
+
+  let current = number;
+  let index = 0;
+
+  while (
+    current >= 1024 &&
+    index < units.length - 1
+  ) {
+    current /= 1024;
+    index += 1;
+  }
+
+  return (
+    `${current.toFixed(
+      index === 0 ? 0 : 1
+    )} ${units[index]}`
+  );
+}
+
+
+function sysDuration(seconds) {
+  let value = Math.max(
+    0,
+    Number(seconds) || 0
+  );
+
+  const days = Math.floor(
+    value / 86400
+  );
+
+  value %= 86400;
+
+  const hours = Math.floor(
+    value / 3600
+  );
+
+  value %= 3600;
+
+  const minutes = Math.floor(
+    value / 60
+  );
+
+  if (days > 0) {
+    return `${days}d ${hours}h ${minutes}m`;
+  }
+
+  if (hours > 0) {
+    return `${hours}h ${minutes}m`;
+  }
+
+  return `${minutes}m`;
+}
+
+
+async function sysRequest(
+  url,
+  options = {}
+) {
+  const response = await fetch(
+    url,
+    {
+      credentials: "same-origin",
+      ...options,
+    }
+  );
+
+  let data = null;
+
+  try {
+    data = await response.json();
+  } catch (_) {
+    data = null;
+  }
+
+  if (!response.ok) {
+    throw new Error(
+      data?.detail ||
+      `HTTP ${response.status}`
+    );
+  }
+
+  return data;
+}
+
+
+function sysCreatePages() {
+  const main =
+    document.getElementById(
+      "app-main"
+    );
+
+  if (!main) {
+    return;
+  }
+
+  if (!main.querySelector(
+    '[data-secbox-page="monitor-system"]'
+  )) {
+    const page =
+      document.createElement(
+        "section"
+      );
+
+    page.className =
+      "panel sys-page";
+
+    page.dataset.secboxPage =
+      "monitor-system";
+
+    page.innerHTML = `
+      <div class="section-heading">
+        <div>
+          <p class="eyebrow">
+            SecBox host
+          </p>
+          <h2>Состояние системы</h2>
+        </div>
+
+        <button
+          id="sys-refresh"
+          type="button"
+        >
+          Обновить
+        </button>
+      </div>
+
+      <p
+        id="sys-message"
+        class="hint"
+      >
+        Загрузка…
+      </p>
+
+      <div class="sys-metrics">
+        <article>
+          <span>CPU</span>
+          <strong id="sys-cpu">—</strong>
+          <small id="sys-load">—</small>
+        </article>
+
+        <article>
+          <span>RAM</span>
+          <strong id="sys-memory">—</strong>
+          <small id="sys-memory-detail">—</small>
+        </article>
+
+        <article>
+          <span>Root FS</span>
+          <strong id="sys-disk">—</strong>
+          <small id="sys-disk-detail">—</small>
+        </article>
+
+        <article>
+          <span>Uptime</span>
+          <strong id="sys-uptime">—</strong>
+          <small id="sys-hostname">—</small>
+        </article>
+      </div>
+
+      <div class="sys-details">
+        <article>
+          <span>SecBox</span>
+          <strong id="sys-version">—</strong>
+        </article>
+
+        <article>
+          <span>OS</span>
+          <strong id="sys-os">—</strong>
+        </article>
+
+        <article>
+          <span>Kernel</span>
+          <strong id="sys-kernel">—</strong>
+        </article>
+
+        <article>
+          <span>Swap</span>
+          <strong id="sys-swap">—</strong>
+        </article>
+
+        <article>
+          <span>Journal</span>
+          <strong id="sys-journal">—</strong>
+        </article>
+
+        <article>
+          <span>Reboot required</span>
+          <strong id="sys-reboot-required">—</strong>
+        </article>
+      </div>
+
+      <div class="sys-section">
+        <div class="section-heading">
+          <div>
+            <h3>Температуры</h3>
+          </div>
+        </div>
+
+        <div
+          id="sys-temperatures"
+          class="sys-temperature-list"
+        ></div>
+      </div>
+
+      <div class="sys-section">
+        <div class="section-heading">
+          <div>
+            <h3>Failed systemd units</h3>
+          </div>
+
+          <span
+            id="sys-failed-count"
+            class="tag"
+          >
+            —
+          </span>
+        </div>
+
+        <div
+          id="sys-failed-units"
+          class="sys-failed-list"
+        ></div>
+      </div>
+    `;
+
+    main.append(
+      page
+    );
+  }
+
+  if (!main.querySelector(
+    '[data-secbox-system-management="true"]'
+  )) {
+    const page =
+      document.createElement(
+        "section"
+      );
+
+    page.className =
+      "panel sys-page sys-danger-zone";
+
+    page.dataset.secboxPage =
+      "manage-system";
+
+    page.dataset.secboxSystemManagement =
+      "true";
+
+    page.innerHTML = `
+      <div class="section-heading">
+        <div>
+          <p class="eyebrow">
+            Управление системой
+          </p>
+          <h2>Power control</h2>
+        </div>
+      </div>
+
+      <p class="hint">
+        Управление отдельными службами выполняется
+        в разделе «Службы». Здесь доступны только
+        операции над самим хостом SecBox.
+      </p>
+
+      <div class="sys-power-grid">
+        <article>
+          <strong>Перезагрузка</strong>
+
+          <p>
+            Корректно перезагрузить SecBox.
+            Сетевые соединения будут прерваны.
+          </p>
+
+          <button
+            id="sys-reboot"
+            type="button"
+          >
+            Reboot
+          </button>
+        </article>
+
+        <article>
+          <strong>Выключение</strong>
+
+          <p>
+            Корректно выключить хост SecBox.
+            Для запуска потребуется доступ
+            к гипервизору или физической машине.
+          </p>
+
+          <button
+            id="sys-poweroff"
+            type="button"
+            class="secondary"
+          >
+            Power off
+          </button>
+        </article>
+      </div>
+
+      <p
+        id="sys-power-message"
+        class="hint"
+        role="status"
+      ></p>
+    `;
+
+    main.prepend(
+      page
+    );
+  }
+}
+
+
+function sysRender(runtime) {
+  const cpu =
+    runtime.cpu || {};
+
+  const memory =
+    runtime.memory || {};
+
+  const swap =
+    runtime.swap || {};
+
+  const disk =
+    runtime.root_filesystem || {};
+
+  const load =
+    Array.isArray(
+      cpu.load_average
+    )
+      ? cpu.load_average.join(" / ")
+      : "—";
+
+  const cpuValue =
+    cpu.used_percent == null
+      ? "—"
+      : `${cpu.used_percent}%`;
+
+  document.getElementById(
+    "sys-cpu"
+  ).textContent =
+    cpuValue;
+
+  document.getElementById(
+    "sys-load"
+  ).textContent =
+    `Load: ${load}`;
+
+  document.getElementById(
+    "sys-memory"
+  ).textContent =
+    `${memory.used_percent ?? "—"}%`;
+
+  document.getElementById(
+    "sys-memory-detail"
+  ).textContent =
+    `${sysBytes(memory.used_bytes)} / ` +
+    `${sysBytes(memory.total_bytes)}`;
+
+  document.getElementById(
+    "sys-disk"
+  ).textContent =
+    `${disk.used_percent ?? "—"}%`;
+
+  document.getElementById(
+    "sys-disk-detail"
+  ).textContent =
+    `${sysBytes(disk.used_bytes)} / ` +
+    `${sysBytes(disk.total_bytes)}`;
+
+  document.getElementById(
+    "sys-uptime"
+  ).textContent =
+    sysDuration(
+      runtime.uptime_seconds
+    );
+
+  document.getElementById(
+    "sys-hostname"
+  ).textContent =
+    runtime.hostname || "—";
+
+  document.getElementById(
+    "sys-version"
+  ).textContent =
+    runtime.secbox_version || "—";
+
+  document.getElementById(
+    "sys-os"
+  ).textContent =
+    runtime.os?.name || "—";
+
+  document.getElementById(
+    "sys-kernel"
+  ).textContent =
+    `${runtime.kernel?.release || "—"} ` +
+    `${runtime.kernel?.machine || ""}`;
+
+  document.getElementById(
+    "sys-swap"
+  ).textContent =
+    swap.total_bytes
+      ? (
+          `${swap.used_percent}% · ` +
+          `${sysBytes(swap.used_bytes)} / ` +
+          `${sysBytes(swap.total_bytes)}`
+        )
+      : "Disabled";
+
+  document.getElementById(
+    "sys-journal"
+  ).textContent =
+    runtime.journal_bytes == null
+      ? "—"
+      : sysBytes(
+          runtime.journal_bytes
+        );
+
+  const reboot =
+    document.getElementById(
+      "sys-reboot-required"
+    );
+
+  reboot.textContent =
+    runtime.reboot_required
+      ? "YES"
+      : "NO";
+
+  reboot.className =
+    runtime.reboot_required
+      ? "error"
+      : "good";
+
+  const failed =
+    runtime.failed_units || [];
+
+  document.getElementById(
+    "sys-failed-count"
+  ).textContent =
+    String(
+      runtime.failed_unit_count ?? 0
+    );
+
+  const failedBox =
+    document.getElementById(
+      "sys-failed-units"
+    );
+
+  failedBox.replaceChildren();
+
+  if (!failed.length) {
+    const item =
+      document.createElement(
+        "p"
+      );
+
+    item.className =
+      "good";
+
+    item.textContent =
+      "Failed units отсутствуют.";
+
+    failedBox.append(
+      item
+    );
+
+  } else {
+    for (const unit of failed) {
+      const item =
+        document.createElement(
+          "article"
+        );
+
+      const title =
+        document.createElement(
+          "strong"
+        );
+
+      title.textContent =
+        unit.unit || "unknown";
+
+      const detail =
+        document.createElement(
+          "span"
+        );
+
+      detail.textContent =
+        `${unit.active || "—"} / ` +
+        `${unit.sub || "—"} · ` +
+        `${unit.description || ""}`;
+
+      item.append(
+        title,
+        detail
+      );
+
+      failedBox.append(
+        item
+      );
+    }
+  }
+
+  const temperatureBox =
+    document.getElementById(
+      "sys-temperatures"
+    );
+
+  temperatureBox.replaceChildren();
+
+  const temperatures =
+    runtime.temperatures || [];
+
+  if (!temperatures.length) {
+    const item =
+      document.createElement(
+        "p"
+      );
+
+    item.className =
+      "hint";
+
+    item.textContent =
+      "Датчики температуры недоступны.";
+
+    temperatureBox.append(
+      item
+    );
+
+  } else {
+    for (
+      const temperature
+      of temperatures
+    ) {
+      const item =
+        document.createElement(
+          "article"
+        );
+
+      const name =
+        document.createElement(
+          "span"
+        );
+
+      name.textContent =
+        temperature.label;
+
+      const value =
+        document.createElement(
+          "strong"
+        );
+
+      value.textContent =
+        `${temperature.celsius} °C`;
+
+      item.append(
+        name,
+        value
+      );
+
+      temperatureBox.append(
+        item
+      );
+    }
+  }
+}
+
+
+async function sysLoadRuntime() {
+  const message =
+    document.getElementById(
+      "sys-message"
+    );
+
+  if (!message) {
+    return;
+  }
+
+  try {
+    const data =
+      await sysRequest(
+        "/api/v1/system/runtime"
+      );
+
+    sysRender(
+      data.runtime || {}
+    );
+
+    message.textContent =
+      "Системная телеметрия актуальна.";
+
+    message.className =
+      "good";
+
+  } catch (error) {
+    message.textContent =
+      `Ошибка: ${error.message}`;
+
+    message.className =
+      "error";
+  }
+}
+
+
+async function sysPower(
+  operation
+) {
+  const required =
+    operation === "reboot"
+      ? "REBOOT"
+      : "POWEROFF";
+
+  const label =
+    operation === "reboot"
+      ? "перезагрузки"
+      : "выключения";
+
+  const confirmation =
+    window.prompt(
+      `Для подтверждения ${label} ` +
+      `введите ${required}`
+    );
+
+  if (
+    confirmation === null
+  ) {
+    return;
+  }
+
+  const message =
+    document.getElementById(
+      "sys-power-message"
+    );
+
+  if (
+    confirmation !== required
+  ) {
+    message.textContent =
+      `Операция отменена: требуется ${required}.`;
+
+    message.className =
+      "error";
+
+    return;
+  }
+
+  try {
+    const result =
+      await sysRequest(
+        "/api/v1/system/power",
+        {
+          method: "POST",
+          headers: {
+            "Content-Type":
+              "application/json",
+          },
+          body: JSON.stringify(
+            {
+              operation,
+              confirmation,
+            }
+          ),
+        }
+      );
+
+    message.textContent =
+      result.accepted
+        ? (
+            `Операция ${operation} принята. ` +
+            "Соединение с Web Console скоро будет потеряно."
+          )
+        : "Операция не принята.";
+
+    message.className =
+      result.accepted
+        ? "good"
+        : "error";
+
+  } catch (error) {
+    message.textContent =
+      `Ошибка: ${error.message}`;
+
+    message.className =
+      "error";
+  }
+}
+
+
+function sysBindUi() {
+  const monitor =
+    document.querySelector(
+      '[data-secbox-page="monitor-system"]'
+    );
+
+  const management =
+    document.querySelector(
+      '[data-secbox-system-management="true"]'
+    );
+
+  if (
+    monitor &&
+    monitor.dataset.bound !== "true"
+  ) {
+    monitor.dataset.bound =
+      "true";
+
+    document.getElementById(
+      "sys-refresh"
+    )?.addEventListener(
+      "click",
+      sysLoadRuntime
+    );
+  }
+
+  if (
+    management &&
+    management.dataset.bound !== "true"
+  ) {
+    management.dataset.bound =
+      "true";
+
+    document.getElementById(
+      "sys-reboot"
+    )?.addEventListener(
+      "click",
+      () => sysPower(
+        "reboot"
+      )
+    );
+
+    document.getElementById(
+      "sys-poweroff"
+    )?.addEventListener(
+      "click",
+      () => sysPower(
+        "poweroff"
+      )
+    );
+  }
+
+  if (monitor) {
+    sysLoadRuntime();
+
+    if (!sysPollTimer) {
+      sysPollTimer =
+        window.setInterval(
+          sysLoadRuntime,
+          10000
+        );
+    }
+  }
+}
+
+
 function secboxClassifyPages() {
   const main = document.getElementById("app-main");
 
@@ -3649,6 +6185,15 @@ function secboxClassifyPages() {
 
   fwCreatePages();
   fwBindUi();
+
+  idsCreatePages();
+  idsBindUi();
+
+  bhCreatePages();
+  bhBindUi();
+
+  sysCreatePages();
+  sysBindUi();
 
   // Overview
   [

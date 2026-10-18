@@ -52,6 +52,15 @@ def render_nftables_config(
             ]
         )
 
+    lines.extend(
+        [
+            "    set deception_sources_v4 {",
+            "        type ipv4_addr;",
+            "    }",
+            "",
+        ]
+    )
+
     if enable_doh_set or doh_resolver_addresses:
         lines.extend(
             [
@@ -80,8 +89,91 @@ def render_nftables_config(
             ]
         )
 
+    deception_ingress = [
+        config.wan_interface,
+        config.lan_interface,
+        *vpn_interfaces,
+    ]
+
+    deception_ingress = sorted(
+        {
+            interface
+            for interface in deception_ingress
+            if (
+                interface
+                and interface
+                != config.management_interface
+            )
+        }
+    )
+
+    ingress_expression = ", ".join(
+        f'"{interface}"'
+        for interface in deception_ingress
+    )
+
     lines.extend(
         [
+            "    chain deception_prerouting {",
+            "        type filter hook prerouting priority mangle;",
+            "        policy accept;",
+        ]
+    )
+
+    if ingress_expression:
+        lines.extend(
+            [
+                "",
+                (
+                    f"        iifname {{ {ingress_expression} }} "
+                    "ct mark 0x400 "
+                    "meta mark set 0x400"
+                ),
+            ]
+        )
+
+    if ingress_expression:
+        lines.extend(
+            [
+                (
+                    f"        iifname {{ {ingress_expression} }} "
+                    "ip saddr @deception_sources_v4 "
+                    "ct state new "
+                    "ct mark set 0x400 "
+                    "meta mark set 0x400"
+                ),
+            ]
+        )
+
+    lines.extend(
+        [
+            "    }",
+        ]
+    )
+
+    if ingress_expression:
+        lines.extend(
+            [
+                "",
+                "    chain deception_local_dnat {",
+                "        type nat hook prerouting priority dstnat;",
+                "        policy accept;",
+                "",
+                f"        iifname {{ {ingress_expression} }} ip saddr @deception_sources_v4 udp dport 53 dnat ip to 10.61.14.12",
+                f"        iifname {{ {ingress_expression} }} ip saddr @deception_sources_v4 tcp dport 53 dnat ip to 10.61.14.12",
+                (
+                    f"        iifname {{ {ingress_expression} }} "
+                    "ip saddr @deception_sources_v4 "
+                    "fib daddr type local "
+                    "dnat ip to 10.250.0.2"
+                ),
+                "    }",
+            ]
+        )
+
+    lines.extend(
+        [
+            "",
             "    chain input {",
             "        type filter hook input priority 0;",
             f"        policy {config.input_policy};",
@@ -192,6 +284,12 @@ def render_nftables_config(
             "    chain forward {",
             "        type filter hook forward priority 0;",
             f"        policy {config.forward_policy};",
+            "",
+            (
+                '        meta mark 0x400 '
+                'oifname "veth-dec-host" '
+                'counter accept'
+            ),
         ]
     )
 

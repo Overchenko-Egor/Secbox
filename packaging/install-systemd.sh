@@ -23,4 +23,10 @@ install -D -m 0644 \
     "$PROJECT_ROOT/packaging/systemd/secbox-vpn.service" \
     /etc/systemd/system/secbox-vpn.service
 
+for unit in "$PROJECT_ROOT"/packaging/systemd/secbox-deception-*.service; do
+    install -D -m 0644 "$unit" "/etc/systemd/system/$(basename "$unit")"
+done
+systemctl enable secbox-deception-net.service secbox-deception-topology.service secbox-deception-runtime.service secbox-deception-honeypot.service
+
+
 systemctl daemon-reload

@@ -55,6 +55,18 @@ from secbox.modules.firewall.models import FirewallConfig
 from secbox.modules.content_filter.models import ContentFilterConfig
 
 
+from secbox.actions.ids import (
+    IdsActionError,
+    apply_ids_action,
+    get_ids_action,
+    get_ids_runtime_action,
+    get_ids_runtime_config_action,
+    validate_ids_action,
+    add_ids_blackhole_action,
+)
+from secbox.modules.ids.config import IdsConfig
+
+
 MAX_INPUT_BYTES = 1024 * 1024
 
 LOCK_PATH = Path(
@@ -532,6 +544,9 @@ def _dashboard_context_payload() -> dict[str, object]:
             if config.firewall is not None
             else None
         ),
+        "ids": config.ids.model_dump(
+            mode="json"
+        ),
         "content_filter": (
             config.content_filter.model_dump(
                 mode="json"
@@ -645,6 +660,195 @@ def socket_request() -> None:
 
             return
 
+        if action == "get-blackhole-runtime":
+            if set(request) != {
+                "action",
+            }:
+                raise ValueError(
+                    "unexpected get-blackhole-runtime fields"
+                )
+
+            from secbox.actions.blackhole import (
+                BlackholeActionError,
+                get_blackhole_runtime_action,
+            )
+
+            try:
+                result = (
+                    get_blackhole_runtime_action()
+                )
+
+            except BlackholeActionError as error:
+                _emit(
+                    {
+                        "ok": False,
+                        "error":
+                            "blackhole_runtime_failed",
+                        "detail": str(error),
+                    }
+                )
+                return
+
+            _emit(
+                {
+                    "ok": True,
+                    "result": result,
+                }
+            )
+            return
+
+        if action == "blackhole-add":
+            if set(request) != {
+                "action",
+                "address",
+                "timeout",
+                "reason",
+            }:
+                raise ValueError(
+                    "unexpected blackhole-add fields"
+                )
+
+            if not all(
+                isinstance(
+                    request[field],
+                    str,
+                )
+                for field in (
+                    "address",
+                    "timeout",
+                    "reason",
+                )
+            ):
+                raise ValueError(
+                    "blackhole-add fields must be strings"
+                )
+
+            from secbox.actions.blackhole import (
+                BlackholeActionError,
+                add_blackhole_action,
+            )
+
+            try:
+                result = (
+                    add_blackhole_action(
+                        address=request[
+                            "address"
+                        ],
+                        timeout=request[
+                            "timeout"
+                        ],
+                        reason=request[
+                            "reason"
+                        ],
+                    )
+                )
+
+            except BlackholeActionError as error:
+                _emit(
+                    {
+                        "ok": False,
+                        "error":
+                            "blackhole_add_failed",
+                        "detail": str(error),
+                    }
+                )
+                return
+
+            _emit(
+                {
+                    "ok": True,
+                    "result": result,
+                }
+            )
+            return
+
+        if action == "blackhole-delete":
+            if set(request) != {
+                "action",
+                "address",
+            }:
+                raise ValueError(
+                    "unexpected blackhole-delete fields"
+                )
+
+            if not isinstance(
+                request["address"],
+                str,
+            ):
+                raise ValueError(
+                    "address must be a string"
+                )
+
+            from secbox.actions.blackhole import (
+                BlackholeActionError,
+                delete_blackhole_action,
+            )
+
+            try:
+                result = (
+                    delete_blackhole_action(
+                        address=request[
+                            "address"
+                        ],
+                    )
+                )
+
+            except BlackholeActionError as error:
+                _emit(
+                    {
+                        "ok": False,
+                        "error":
+                            "blackhole_delete_failed",
+                        "detail": str(error),
+                    }
+                )
+                return
+
+            _emit(
+                {
+                    "ok": True,
+                    "result": result,
+                }
+            )
+            return
+
+        if action == "blackhole-reconcile":
+            if set(request) != {
+                "action",
+            }:
+                raise ValueError(
+                    "unexpected blackhole-reconcile fields"
+                )
+
+            from secbox.actions.blackhole import (
+                BlackholeActionError,
+                reconcile_blackhole_action,
+            )
+
+            try:
+                result = (
+                    reconcile_blackhole_action()
+                )
+
+            except BlackholeActionError as error:
+                _emit(
+                    {
+                        "ok": False,
+                        "error":
+                            "blackhole_reconcile_failed",
+                        "detail": str(error),
+                    }
+                )
+                return
+
+            _emit(
+                {
+                    "ok": True,
+                    "result": result,
+                }
+            )
+            return
+
         if action == "get-firewall":
             if set(request) != {"action"}:
                 raise ValueError(
@@ -738,6 +942,257 @@ def socket_request() -> None:
                     {
                         "ok": False,
                         "error": "runtime_failed",
+                        "detail": str(error),
+                    }
+                )
+                return
+
+            _emit(
+                {
+                    "ok": True,
+                    "result": {
+                        "runtime": runtime,
+                    },
+                }
+            )
+            return
+
+        if action == "get-ids-runtime-config":
+            if set(request) != {
+                "action",
+            }:
+                raise ValueError(
+                    "unexpected "
+                    "get-ids-runtime-config fields"
+                )
+
+            try:
+                config = (
+                    get_ids_runtime_config_action()
+                )
+
+            except IdsActionError as error:
+                _emit(
+                    {
+                        "ok": False,
+                        "error":
+                            "ids_runtime_config_failed",
+                        "detail": str(error),
+                    }
+                )
+                return
+
+            _emit(
+                {
+                    "ok": True,
+                    "result": {
+                        "config": config,
+                    },
+                }
+            )
+            return
+
+        if action == "get-ids":
+            if set(request) != {"action"}:
+                raise ValueError(
+                    "unexpected get-ids fields"
+                )
+
+            ids = get_ids_action()
+
+            _emit(
+                {
+                    "ok": True,
+                    "result": {
+                        "ids": ids.model_dump(
+                            mode="json"
+                        )
+                    },
+                }
+            )
+            return
+
+        if action == "validate-ids":
+            if set(request) != {
+                "action",
+                "ids",
+            }:
+                raise ValueError(
+                    "unexpected validate-ids fields"
+                )
+
+            try:
+                ids = IdsConfig.model_validate(
+                    request["ids"]
+                )
+
+                validate_ids_action(
+                    ids
+                )
+
+            except (
+                IdsActionError,
+                ValidationError,
+            ) as error:
+                _emit(
+                    {
+                        "ok": False,
+                        "error":
+                            "validation_failed",
+                        "detail": str(error),
+                    }
+                )
+                return
+
+            _emit(
+                {
+                    "ok": True,
+                    "result": {
+                        "valid": True,
+                    },
+                }
+            )
+            return
+
+        if action == "apply-ids":
+            if set(request) != {
+                "action",
+                "ids",
+            }:
+                raise ValueError(
+                    "unexpected apply-ids fields"
+                )
+
+            try:
+                ids = IdsConfig.model_validate(
+                    request["ids"]
+                )
+
+                with configuration_lock():
+                    result = apply_ids_action(
+                        ids
+                    )
+
+            except ActionBusyError as error:
+                _emit(
+                    {
+                        "ok": False,
+                        "error": "busy",
+                        "detail": str(error),
+                    }
+                )
+                return
+
+            except (
+                IdsActionError,
+                ValidationError,
+            ) as error:
+                _emit(
+                    {
+                        "ok": False,
+                        "error":
+                            "apply_failed",
+                        "detail": str(error),
+                    }
+                )
+                return
+
+            _emit(
+                {
+                    "ok": True,
+                    "result": {
+                        "enabled":
+                            result.enabled,
+                        "automatic_blackhole_enabled":
+                            result.automatic_blackhole_enabled,
+                        "automatic_blackhole_timeout":
+                            result.automatic_blackhole_timeout,
+                    },
+                }
+            )
+            return
+
+        if action == "ids-blackhole-add":
+            expected_fields = {
+                "action",
+                "address",
+                "signature_id",
+                "severity",
+                "count",
+            }
+
+            if set(request) != expected_fields:
+                raise ValueError(
+                    "unexpected ids-blackhole-add fields"
+                )
+
+            address = request["address"]
+            signature_id = request[
+                "signature_id"
+            ]
+            severity = request[
+                "severity"
+            ]
+            count = request[
+                "count"
+            ]
+
+            if not isinstance(
+                address,
+                str,
+            ):
+                raise ValueError(
+                    "address must be a string"
+                )
+
+            try:
+                result = (
+                    add_ids_blackhole_action(
+                        address=address,
+                        signature_id=(
+                            signature_id
+                        ),
+                        severity=severity,
+                        count=count,
+                    )
+                )
+
+            except IdsActionError as error:
+                _emit(
+                    {
+                        "ok": False,
+                        "error":
+                            "ids_blackhole_failed",
+                        "detail": str(error),
+                    }
+                )
+                return
+
+            _emit(
+                {
+                    "ok": True,
+                    "result": result,
+                }
+            )
+            return
+
+        if action == "get-ids-runtime":
+            if set(request) != {"action"}:
+                raise ValueError(
+                    "unexpected get-ids-runtime fields"
+                )
+
+            try:
+                runtime = (
+                    get_ids_runtime_action()
+                )
+
+            except IdsActionError as error:
+                _emit(
+                    {
+                        "ok": False,
+                        "error":
+                            "runtime_failed",
                         "detail": str(error),
                     }
                 )
@@ -865,6 +1320,282 @@ def socket_request() -> None:
                     code
                 )
 
+            return
+
+        if action == "deception-observe-start":
+            expected = {
+                "action",
+                "source_ip",
+                "reason",
+                "trigger_source",
+                "signature_id",
+                "severity",
+                "count",
+            }
+
+            if set(request) != expected:
+                raise ValueError(
+                    "unexpected deception-observe-start fields"
+                )
+
+            from secbox.actions.deception import (
+                DeceptionActionError,
+                start_observe_case_action,
+            )
+
+            try:
+                result = (
+                    start_observe_case_action(
+                        source_ip=request[
+                            "source_ip"
+                        ],
+                        reason=request[
+                            "reason"
+                        ],
+                        trigger_source=request[
+                            "trigger_source"
+                        ],
+                        signature_id=request[
+                            "signature_id"
+                        ],
+                        severity=request[
+                            "severity"
+                        ],
+                        count=request[
+                            "count"
+                        ],
+                    )
+                )
+
+            except DeceptionActionError as error:
+                _emit(
+                    {
+                        "ok": False,
+                        "error":
+                            "deception_start_failed",
+                        "detail":
+                            str(error),
+                    }
+                )
+                return
+
+            _emit(
+                {
+                    "ok": True,
+                    "result":
+                        result,
+                }
+            )
+            return
+
+        if action == "deception-observe-stop":
+            if set(request) != {
+                "action",
+                "case_id",
+            }:
+                raise ValueError(
+                    "unexpected deception-observe-stop fields"
+                )
+
+            from secbox.actions.deception import (
+                DeceptionActionError,
+                stop_observe_case_action,
+            )
+
+            try:
+                result = (
+                    stop_observe_case_action(
+                        case_id=request[
+                            "case_id"
+                        ]
+                    )
+                )
+
+            except DeceptionActionError as error:
+                _emit(
+                    {
+                        "ok": False,
+                        "error":
+                            "deception_stop_failed",
+                        "detail":
+                            str(error),
+                    }
+                )
+                return
+
+            _emit(
+                {
+                    "ok": True,
+                    "result":
+                        result,
+                }
+            )
+            return
+
+        if action == "get-deception-cases":
+            if set(request) != {
+                "action",
+            }:
+                raise ValueError(
+                    "unexpected get-deception-cases fields"
+                )
+
+            from secbox.actions.deception import (
+                list_deception_cases_action,
+            )
+
+            _emit(
+                {
+                    "ok": True,
+                    "result":
+                        list_deception_cases_action(),
+                }
+            )
+            return
+
+        if action == "get-deception-case":
+            if set(request) != {
+                "action",
+                "case_id",
+            }:
+                raise ValueError(
+                    "unexpected get-deception-case fields"
+                )
+
+            from secbox.actions.deception import (
+                DeceptionActionError,
+                get_deception_case_action,
+            )
+
+            try:
+                result = (
+                    get_deception_case_action(
+                        case_id=request[
+                            "case_id"
+                        ]
+                    )
+                )
+
+            except DeceptionActionError as error:
+                _emit(
+                    {
+                        "ok": False,
+                        "error":
+                            "deception_get_failed",
+                        "detail":
+                            str(error),
+                    }
+                )
+                return
+
+            _emit(
+                {
+                    "ok": True,
+                    "result":
+                        result,
+                }
+            )
+            return
+
+        if action == "get-system-runtime":
+            if set(request) != {
+                "action",
+            }:
+                raise ValueError(
+                    "unexpected get-system-runtime fields"
+                )
+
+            from secbox.actions.system import (
+                SystemActionError,
+                get_system_runtime_action,
+            )
+
+            try:
+                result = (
+                    get_system_runtime_action()
+                )
+
+            except SystemActionError as error:
+                _emit(
+                    {
+                        "ok": False,
+                        "error":
+                            "system_runtime_failed",
+                        "detail": str(error),
+                    }
+                )
+                return
+
+            _emit(
+                {
+                    "ok": True,
+                    "result": result,
+                }
+            )
+            return
+
+        if action == "system-power":
+            if set(request) != {
+                "action",
+                "operation",
+                "confirmation",
+            }:
+                raise ValueError(
+                    "unexpected system-power fields"
+                )
+
+            operation = request[
+                "operation"
+            ]
+
+            confirmation = request[
+                "confirmation"
+            ]
+
+            if (
+                not isinstance(
+                    operation,
+                    str,
+                )
+                or not isinstance(
+                    confirmation,
+                    str,
+                )
+            ):
+                raise ValueError(
+                    "system-power fields must be strings"
+                )
+
+            from secbox.actions.system import (
+                SystemActionError,
+                system_power_action,
+            )
+
+            try:
+                result = (
+                    system_power_action(
+                        operation=operation,
+                        confirmation=confirmation,
+                    )
+                )
+
+            except SystemActionError as error:
+                _emit(
+                    {
+                        "ok": False,
+                        "error":
+                            "system_power_failed",
+                        "detail": str(error),
+                    }
+                )
+                return
+
+            _emit(
+                {
+                    "ok": True,
+                    "result": result,
+                }
+            )
             return
 
         if action == "get-services":

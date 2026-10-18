@@ -5,8 +5,11 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from secbox.modules.blacklist.service import (
     BlacklistError,
-    add_blacklist_entry,
     parse_timeout,
+)
+from secbox.modules.ids.action_client import (
+    IdsActionClientError,
+    add_ids_blackhole_via_helper,
 )
 from secbox.modules.ids.policy import (
     PolicyAction,
@@ -42,7 +45,9 @@ class IdsResponseHandler:
         automatic_blackhole_enabled: bool,
         automatic_blackhole_timeout: str,
         protected_networks: tuple[str, ...],
-        blacklist_add: BlacklistAddFunction = add_blacklist_entry,
+        blacklist_add: BlacklistAddFunction = (
+            add_ids_blackhole_via_helper
+        ),
     ) -> None:
         self.automatic_blackhole_enabled = (
             automatic_blackhole_enabled
@@ -53,7 +58,10 @@ class IdsResponseHandler:
                 automatic_blackhole_timeout
             )
 
-        except BlacklistError as error:
+        except (
+            BlacklistError,
+            IdsActionClientError,
+        ) as error:
             raise IdsResponseError(
                 "invalid automatic blackhole timeout: "
                 f"{automatic_blackhole_timeout}: {error}"
@@ -130,17 +138,17 @@ class IdsResponseHandler:
         try:
             self.blacklist_add(
                 address=detection.source_ip,
-                timeout=(
-                    self.automatic_blackhole_timeout
+                signature_id=(
+                    detection.signature_id
                 ),
-                reason=reason,
-                source="ids",
-                protected_networks=list(
-                    self.protected_networks
-                ),
+                severity=detection.severity,
+                count=detection.count,
             )
 
-        except BlacklistError as error:
+        except (
+            BlacklistError,
+            IdsActionClientError,
+        ) as error:
             raise IdsResponseError(
                 (
                     "failed to blacklist IDS source "

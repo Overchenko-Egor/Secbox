@@ -172,6 +172,10 @@ from secbox.modules.ids.policy import (
 from secbox.modules.ids.response import (
     IdsResponseError,
 )
+from secbox.modules.ids.action_client import (
+    IdsActionClientError,
+    get_ids_runtime_config_via_helper,
+)
 
 
 
@@ -1645,7 +1649,9 @@ def ids_run() -> None:
     )
 
     try:
-        config = _store().load()
+        config = (
+            get_ids_runtime_config_via_helper()
+        )
 
         if not config.ids.enabled:
             console.print(
@@ -1799,6 +1805,7 @@ def ids_run() -> None:
         IdsDaemonError,
         IdsWorkerError,
         IdsResponseError,
+        IdsActionClientError,
     ) as error:
         console.print(
             f"[red]IDS daemon failed:[/red] "

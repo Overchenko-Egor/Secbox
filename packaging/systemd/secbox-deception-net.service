@@ -1,0 +1,40 @@
+[Unit]
+Description=SecBox Deception isolated network namespace
+After=network-online.target
+Wants=network-online.target
+Wants=secbox-deception-topology.service
+Wants=secbox-firewall.service
+Wants=secbox-deception-runtime.service
+Wants=secbox-deception-honeypot.service
+Before=secbox-deception-topology.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+
+User=root
+Group=root
+
+WorkingDirectory=/home/egor/dev/secbox
+
+Environment=PYTHONPATH=/home/egor/dev/secbox/src
+Environment=PYTHONUNBUFFERED=1
+Environment=PYTHONDONTWRITEBYTECODE=1
+
+ExecStart=/home/egor/dev/secbox/.venv/bin/python -m secbox.modules.deception.network up
+ExecStop=/home/egor/dev/secbox/.venv/bin/python -m secbox.modules.deception.network down
+
+NoNewPrivileges=yes
+
+CapabilityBoundingSet=CAP_NET_ADMIN CAP_SYS_ADMIN CAP_DAC_READ_SEARCH
+AmbientCapabilities=CAP_NET_ADMIN CAP_SYS_ADMIN CAP_DAC_READ_SEARCH
+
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6 AF_NETLINK
+RestrictSUIDSGID=yes
+LockPersonality=yes
+SystemCallArchitectures=native
+
+UMask=0077
+
+[Install]
+WantedBy=multi-user.target
