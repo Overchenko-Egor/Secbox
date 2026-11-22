@@ -1,14 +1,13 @@
 """Authenticated observations and configuration previews."""
 
 import logging
-import secrets
 from pathlib import Path
 from typing import Annotated, Any
 
 import yaml
 from fastapi import APIRouter, Depends, FastAPI, HTTPException, Query, Request
-from fastapi.responses import FileResponse, JSONResponse, Response
-from fastapi.security import HTTPBasic, HTTPBasicCredentials
+from pydantic import BaseModel
+from fastapi.responses import FileResponse, JSONResponse, RedirectResponse, Response
 from starlette.middleware.base import RequestResponseEndpoint
 from starlette.middleware.trustedhost import TrustedHostMiddleware
 from starlette.types import ASGIApp, Message, Receive, Scope, Send
@@ -81,10 +80,35 @@ from secbox.web.network_dhcp_config import (
     NetworkDhcpValidationResponse,
 )
 from secbox.web.settings import WebSettings
+from secbox.web.auth import (
+    SESSION_COOKIE,
+    SESSION_TTL_SECONDS,
+    AuthError,
+    SessionSigner,
+    UserConflictError,
+    UserDeleteError,
+    UserNotFoundError,
+    UserStore,
+    UserValidationError,
+)
 
 logger = logging.getLogger(__name__)
 MAX_BODY_BYTES = 1024 * 1024
 STATIC_ROOT = Path(__file__).parent / "static"
+
+
+class LoginRequest(BaseModel):
+    username: str
+    password: str
+
+
+class CreateUserRequest(BaseModel):
+    username: str
+    password: str
+
+
+class ChangePasswordRequest(BaseModel):
+    password: str
 
 
 class BodyLimitMiddleware:
@@ -142,13 +166,33 @@ from secbox.web.system_api import (
 )
 
 
+from secbox.web.deception_api import (
+    router as deception_api_router,
+)
+
+
+
+
 def create_app(settings: WebSettings | None = None) -> FastAPI:
     settings = settings or WebSettings.from_environment()
     store = ConfigStore(settings.config_path)
     vpn_runtime_store = VpnRuntimeStore()
     vpn_event_store = VpnEventStore()
     network_runtime_store = NetworkRuntimeStore()
-    security = HTTPBasic(realm="SecBox")
+
+    user_store = UserStore(
+        settings.users_path
+    )
+
+    user_store.ensure_bootstrap(
+        username=settings.username,
+        password=settings.password,
+    )
+
+    session_signer = SessionSigner(
+        settings.session_key_path
+    )
+
     app = FastAPI(
         title="SecBox Management API", version=__version__,
         description="Read-only observations and configuration previews. No live configuration changes.",
@@ -170,13 +214,74 @@ def create_app(settings: WebSettings | None = None) -> FastAPI:
         )
         return response
 
-    def require_auth(credentials: Annotated[HTTPBasicCredentials, Depends(security)]) -> None:
-        username_ok = secrets.compare_digest(credentials.username.encode(), settings.username.encode())
-        password_ok = secrets.compare_digest(credentials.password.encode(), settings.password.encode())
-        if not (username_ok and password_ok):
-            raise HTTPException(401, "Invalid credentials", headers={"WWW-Authenticate": 'Basic realm="SecBox"'})
+    def current_user(
+        request: Request,
+    ):
+        token = request.cookies.get(
+            SESSION_COOKIE
+        )
 
-    router = APIRouter(dependencies=[Depends(require_auth)])
+        if not token:
+            return None
+
+        parsed = session_signer.parse(
+            token
+        )
+
+        if parsed is None:
+            return None
+
+        username, version = parsed
+
+        return user_store.get_session_user(
+            username,
+            version,
+        )
+
+    def require_auth(
+        request: Request,
+    ):
+        user = current_user(request)
+
+        if user is not None:
+            return user
+
+        if request.url.path.startswith(
+            "/api/"
+        ):
+            raise HTTPException(
+                401,
+                "Authentication required",
+            )
+
+        next_path = request.url.path
+
+        if request.url.query:
+            next_path += (
+                "?"
+                + request.url.query
+            )
+
+        from urllib.parse import quote
+
+        raise HTTPException(
+            303,
+            "Authentication required",
+            headers={
+                "Location":
+                    "/login?next="
+                    + quote(
+                        next_path,
+                        safe="",
+                    )
+            },
+        )
+
+    router = APIRouter(
+        dependencies=[
+            Depends(require_auth)
+        ]
+    )
 
     def load_config() -> SecBoxConfig:
         try:
@@ -194,11 +299,133 @@ def create_app(settings: WebSettings | None = None) -> FastAPI:
         """Process liveness only, not firewall or IDS readiness."""
         return {"status": "ok"}
 
+    @app.get(
+        "/login",
+        include_in_schema=False,
+    )
+    def login_page(
+        request: Request,
+    ):
+        if current_user(request) is not None:
+            return RedirectResponse(
+                "/",
+                status_code=303,
+            )
+
+        return FileResponse(
+            STATIC_ROOT / "login.html"
+        )
+
+    @app.get(
+        "/assets/login.css",
+        include_in_schema=False,
+    )
+    def login_stylesheet():
+        return FileResponse(
+            STATIC_ROOT / "login.css",
+            media_type="text/css",
+        )
+
+    @app.get(
+        "/assets/login.js",
+        include_in_schema=False,
+    )
+    def login_javascript():
+        return FileResponse(
+            STATIC_ROOT / "login.js",
+            media_type="text/javascript",
+        )
+
+    @app.post(
+        "/api/v1/auth/login",
+        include_in_schema=False,
+    )
+    def login(
+        payload: LoginRequest,
+    ):
+        authenticated = (
+            user_store.authenticate(
+                payload.username.strip(),
+                payload.password,
+            )
+        )
+
+        if authenticated is None:
+            raise HTTPException(
+                401,
+                "Неверное имя пользователя или пароль.",
+            )
+
+        user, version = authenticated
+
+        response = JSONResponse(
+            {
+                "ok": True,
+                "username":
+                    user.username,
+                "role":
+                    user.role,
+            }
+        )
+
+        response.set_cookie(
+            key=SESSION_COOKIE,
+            value=session_signer.create(
+                username=user.username,
+                session_version=version,
+            ),
+            max_age=SESSION_TTL_SECONDS,
+            httponly=True,
+            secure=True,
+            samesite="strict",
+            path="/",
+        )
+
+        return response
+
+    @app.post(
+        "/api/v1/auth/logout",
+        include_in_schema=False,
+    )
+    def logout():
+        response = JSONResponse(
+            {"ok": True}
+        )
+
+        response.delete_cookie(
+            key=SESSION_COOKIE,
+            path="/",
+            secure=True,
+            httponly=True,
+            samesite="strict",
+        )
+
+        return response
+
+    @app.get(
+        "/api/v1/auth/me",
+        include_in_schema=False,
+    )
+    def auth_me(
+        request: Request,
+    ):
+        user = require_auth(
+            request
+        )
+
+        return {
+            "username":
+                user.username,
+            "role":
+                user.role,
+        }
+
     @router.get("/monitoring/network", include_in_schema=False)
     @router.get("/monitoring/vpn", include_in_schema=False)
     @router.get("/monitoring/firewall", include_in_schema=False)
     @router.get("/monitoring/ids", include_in_schema=False)
     @router.get("/monitoring/blackhole", include_in_schema=False)
+    @router.get("/monitoring/deception", include_in_schema=False)
     @router.get("/monitoring/content-filter", include_in_schema=False)
     @router.get("/monitoring/services", include_in_schema=False)
     @router.get("/monitoring/system", include_in_schema=False)
@@ -228,9 +455,144 @@ def create_app(settings: WebSettings | None = None) -> FastAPI:
     def javascript() -> FileResponse:
         return FileResponse(STATIC_ROOT / "app.js", media_type="text/javascript")
 
+    @router.get("/assets/deception.js", include_in_schema=False)
+    def deception_javascript() -> FileResponse:
+        return FileResponse(
+            STATIC_ROOT / "deception.js",
+            media_type="text/javascript",
+        )
+
     @router.get("/assets/style.css", include_in_schema=False)
     def stylesheet() -> FileResponse:
         return FileResponse(STATIC_ROOT / "style.css", media_type="text/css")
+
+    @router.get(
+        "/manage/users",
+        include_in_schema=False,
+    )
+    def users_page() -> FileResponse:
+        return FileResponse(
+            STATIC_ROOT / "users.html"
+        )
+
+    @router.get(
+        "/assets/users.js",
+        include_in_schema=False,
+    )
+    def users_javascript() -> FileResponse:
+        return FileResponse(
+            STATIC_ROOT / "users.js",
+            media_type="text/javascript",
+        )
+
+    @router.get(
+        "/api/v1/users",
+        include_in_schema=False,
+    )
+    def users_list():
+        return {
+            "users":
+                user_store.list_users()
+        }
+
+    @router.post(
+        "/api/v1/users",
+        include_in_schema=False,
+    )
+    def users_create(
+        payload: CreateUserRequest,
+    ):
+        try:
+            user = (
+                user_store.create_user(
+                    username=
+                        payload.username,
+                    password=
+                        payload.password,
+                )
+            )
+
+        except UserConflictError as error:
+            raise HTTPException(
+                409,
+                str(error),
+            ) from error
+
+        except UserValidationError as error:
+            raise HTTPException(
+                422,
+                str(error),
+            ) from error
+
+        return {
+            "ok": True,
+            "user": user,
+        }
+
+    @router.put(
+        "/api/v1/users/{username}/password",
+        include_in_schema=False,
+    )
+    def users_change_password(
+        username: str,
+        payload: ChangePasswordRequest,
+    ):
+        try:
+            user_store.change_password(
+                username=username,
+                password=payload.password,
+            )
+
+        except UserNotFoundError as error:
+            raise HTTPException(
+                404,
+                str(error),
+            ) from error
+
+        except UserValidationError as error:
+            raise HTTPException(
+                422,
+                str(error),
+            ) from error
+
+        return {
+            "ok": True,
+        }
+
+    @router.delete(
+        "/api/v1/users/{username}",
+        include_in_schema=False,
+    )
+    def users_delete(
+        username: str,
+        request: Request,
+    ):
+        user = require_auth(
+            request
+        )
+
+        try:
+            user_store.delete_user(
+                username=username,
+                current_username=
+                    user.username,
+            )
+
+        except UserNotFoundError as error:
+            raise HTTPException(
+                404,
+                str(error),
+            ) from error
+
+        except UserDeleteError as error:
+            raise HTTPException(
+                409,
+                str(error),
+            ) from error
+
+        return {
+            "ok": True,
+        }
 
 
     @router.get(
@@ -351,8 +713,14 @@ def create_app(settings: WebSettings | None = None) -> FastAPI:
 
         return {
             "enabled": result.enabled,
+            "default_action": (
+                result.default_action
+            ),
             "blocked_domains": (
                 result.blocked_domains
+            ),
+            "allowed_domains": (
+                result.allowed_domains
             ),
             "doh_enabled": result.doh_enabled,
             "managed_feed_enabled": (
@@ -1236,6 +1604,11 @@ def create_app(settings: WebSettings | None = None) -> FastAPI:
 
     router.include_router(
         system_api_router
+    )
+
+
+    router.include_router(
+        deception_api_router
     )
 
     app.include_router(router)

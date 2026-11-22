@@ -1,0 +1,53 @@
+#!/bin/sh
+set -eu
+
+echo "=== SecBox chroot install ==="
+
+python3 -m venv /opt/secbox/venv
+
+/opt/secbox/venv/bin/python -m pip install \
+    --upgrade \
+    pip setuptools wheel
+
+SECBOX_WHEEL=$(
+    find /opt/secbox/build \
+        -maxdepth 1 \
+        -type f \
+        -name 'secbox-*.whl' \
+        | head -1
+)
+
+if [ -z "$SECBOX_WHEEL" ]; then
+    echo "SecBox wheel not found" >&2
+    exit 1
+fi
+
+/opt/secbox/venv/bin/pip install \
+    "${SECBOX_WHEEL}[web]"
+
+cp -a \
+    /opt/secbox/build/install/. \
+    /opt/secbox/
+
+/opt/secbox/packaging/install-systemd.sh
+
+install \
+    -D \
+    -m 0644 \
+    /opt/secbox/packaging/nginx/secbox \
+    /etc/nginx/sites-available/secbox
+
+ln -sfn \
+    /etc/nginx/sites-available/secbox \
+    /etc/nginx/sites-enabled/secbox
+
+rm -f /etc/nginx/sites-enabled/default
+
+systemctl enable systemd-networkd.service
+systemctl enable nginx.service
+systemctl enable suricata.service
+systemctl enable ssh.service
+
+rm -rf /opt/secbox/build
+
+echo "=== SecBox chroot install complete ==="

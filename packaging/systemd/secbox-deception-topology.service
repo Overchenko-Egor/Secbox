@@ -11,13 +11,12 @@ RemainAfterExit=yes
 
 User=root
 Group=root
-WorkingDirectory=/home/egor/dev/secbox
+WorkingDirectory=/opt/secbox
 
-Environment=PYTHONPATH=/home/egor/dev/secbox/src
 Environment=PYTHONUNBUFFERED=1
 Environment=PYTHONDONTWRITEBYTECODE=1
 
-ExecStart=/home/egor/dev/secbox/.venv/bin/python -m secbox.modules.deception.topology
+ExecStart=/opt/secbox/venv/bin/python -m secbox.modules.deception.topology
 
 NoNewPrivileges=yes
 CapabilityBoundingSet=CAP_NET_ADMIN CAP_SYS_ADMIN CAP_DAC_READ_SEARCH

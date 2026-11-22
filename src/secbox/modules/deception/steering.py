@@ -2,17 +2,89 @@
 
 from __future__ import annotations
 
+import fcntl
 import ipaddress
 import json
 import os
 import tempfile
 
+from contextlib import contextmanager
 from pathlib import Path
+from typing import Iterator
 
 
 DEFAULT_STATE_PATH = Path(
     "/var/lib/secbox/deception/quarantine.json"
 )
+
+
+@contextmanager
+def _file_lock(
+    path: Path,
+) -> Iterator[None]:
+    path.parent.mkdir(
+        parents=True,
+        exist_ok=True,
+    )
+
+    fd = os.open(
+        path,
+        os.O_CREAT | os.O_RDWR,
+        0o600,
+    )
+
+    try:
+        fcntl.flock(
+            fd,
+            fcntl.LOCK_EX,
+        )
+
+        yield
+
+    finally:
+        try:
+            fcntl.flock(
+                fd,
+                fcntl.LOCK_UN,
+            )
+        finally:
+            os.close(fd)
+
+
+@contextmanager
+def _state_lock(
+    path: Path = DEFAULT_STATE_PATH,
+) -> Iterator[None]:
+    """Serialize quarantine state read-modify-write operations."""
+
+    lock_path = (
+        path.parent
+        / ".quarantine.lock"
+    )
+
+    with _file_lock(lock_path):
+        yield
+
+
+@contextmanager
+def source_operation_lock(
+    source_ip: str,
+    path: Path = DEFAULT_STATE_PATH,
+) -> Iterator[str]:
+    """Serialize complete lifecycle operations for one source."""
+
+    address = normalize_source_ip(
+        source_ip
+    )
+
+    lock_path = (
+        path.parent
+        / "locks"
+        / f"{address}.lock"
+    )
+
+    with _file_lock(lock_path):
+        yield address
 
 
 class DeceptionSteeringError(RuntimeError):
@@ -183,79 +255,82 @@ def add_source(
             "case_id must not be empty"
         )
 
-    state = load_state(
-        path
-    )
-
-    sources = state[
-        "sources"
-    ]
-
-    assert isinstance(
-        sources,
-        dict,
-    )
-
-    current = sources.get(
-        address
-    )
-
-    if current is None:
-        cases: list[str] = []
-    elif isinstance(
-        current,
-        dict,
-    ):
-        raw_cases = current.get(
-            "cases"
+    with _state_lock(path):
+        state = load_state(
+            path
         )
 
-        if not isinstance(
-            raw_cases,
-            list,
+        sources = state[
+            "sources"
+        ]
+
+        assert isinstance(
+            sources,
+            dict,
+        )
+
+        current = sources.get(
+            address
+        )
+
+        if current is None:
+            cases: list[str] = []
+
+        elif isinstance(
+            current,
+            dict,
         ):
+            raw_cases = current.get(
+                "cases"
+            )
+
+            if not isinstance(
+                raw_cases,
+                list,
+            ):
+                raise DeceptionSteeringError(
+                    "invalid quarantine case list"
+                )
+
+            if not all(
+                isinstance(item, str)
+                for item in raw_cases
+            ):
+                raise DeceptionSteeringError(
+                    "invalid quarantine case id"
+                )
+
+            cases = list(
+                raw_cases
+            )
+
+        else:
             raise DeceptionSteeringError(
-                "invalid quarantine case list"
+                "invalid quarantine source entry"
             )
 
-        if not all(
-            isinstance(item, str)
-            for item in raw_cases
-        ):
-            raise DeceptionSteeringError(
-                "invalid quarantine case id"
+        changed = (
+            case_id not in cases
+        )
+
+        if changed:
+            cases.append(
+                case_id
             )
 
-        cases = list(
-            raw_cases
-        )
-    else:
-        raise DeceptionSteeringError(
-            "invalid quarantine source entry"
-        )
+        sources[address] = {
+            "cases":
+                sorted(
+                    set(cases)
+                )
+        }
 
-    changed = (
-        case_id not in cases
-    )
-
-    if changed:
-        cases.append(
-            case_id
+        save_state(
+            state,
+            path,
         )
 
-    sources[address] = {
-        "cases":
-            sorted(
-                set(cases)
-            )
-    }
-
-    save_state(
-        state,
-        path,
-    )
-
-    return changed
+        return changed
 
 
 def remove_source(
@@ -268,76 +343,77 @@ def remove_source(
         source_ip
     )
 
-    state = load_state(
-        path
-    )
-
-    sources = state[
-        "sources"
-    ]
-
-    assert isinstance(
-        sources,
-        dict,
-    )
-
-    current = sources.get(
-        address
-    )
-
-    if not isinstance(
-        current,
-        dict,
-    ):
-        return False
-
-    raw_cases = current.get(
-        "cases"
-    )
-
-    if not isinstance(
-        raw_cases,
-        list,
-    ):
-        raise DeceptionSteeringError(
-            "invalid quarantine case list"
+    with _state_lock(path):
+        state = load_state(
+            path
         )
 
-    cases = [
-        item
-        for item in raw_cases
-        if isinstance(
-            item,
-            str,
-        )
-        and item != case_id
-    ]
+        sources = state[
+            "sources"
+        ]
 
-    if len(cases) == len(
-        raw_cases
-    ):
-        return False
-
-    if cases:
-        sources[address] = {
-            "cases":
-                sorted(
-                    set(cases)
-                )
-        }
-    else:
-        sources.pop(
-            address,
-            None,
+        assert isinstance(
+            sources,
+            dict,
         )
 
-    save_state(
-        state,
-        path,
-    )
+        current = sources.get(
+            address
+        )
 
-    return True
+        if not isinstance(
+            current,
+            dict,
+        ):
+            return False
 
+        raw_cases = current.get(
+            "cases"
+        )
+
+        if not isinstance(
+            raw_cases,
+            list,
+        ):
+            raise DeceptionSteeringError(
+                "invalid quarantine case list"
+            )
+
+        cases = [
+            item
+            for item in raw_cases
+            if isinstance(
+                item,
+                str,
+            )
+            and item != case_id
+        ]
+
+        if len(cases) == len(
+            raw_cases
+        ):
+            return False
+
+        if cases:
+            sources[address] = {
+                "cases":
+                    sorted(
+                        set(cases)
+                    )
+            }
+
+        else:
+            sources.pop(
+                address,
+                None,
+            )
+
+        save_state(
+            state,
+            path,
+        )
+
+        return True
 
 def active_sources(
     path: Path = DEFAULT_STATE_PATH,

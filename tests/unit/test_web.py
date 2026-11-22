@@ -40,15 +40,49 @@ def config_path(tmp_path: Path) -> Path:
 
 
 @pytest.fixture
-def client(config_path: Path, monkeypatch: MonkeyPatch) -> Iterator[TestClient]:
+def client(
+    config_path: Path,
+    monkeypatch: MonkeyPatch,
+    tmp_path: Path,
+) -> Iterator[TestClient]:
     interfaces = [NetworkInterfaceState(
         name=name, mtu=1500, operstate="UP", flags=["UP"], addresses=[], is_loopback=False,
     ) for name in ["wan0", "lan0", "mgmt0"]]
-    monkeypatch.setattr("secbox.web.app.discover_interfaces", lambda: interfaces)
-    monkeypatch.setattr("secbox.web.app.discover_ipv4_routes", lambda: [])
-    monkeypatch.setattr("secbox.web.app.service_statuses", lambda: [])
-    with TestClient(create_app(WebSettings(config_path, PASSWORD)), base_url="http://localhost") as session:
-        session.auth = ("admin", PASSWORD)
+
+    monkeypatch.setattr(
+        "secbox.web.app.discover_interfaces",
+        lambda: interfaces,
+    )
+    monkeypatch.setattr(
+        "secbox.web.app.discover_ipv4_routes",
+        lambda: [],
+    )
+    monkeypatch.setattr(
+        "secbox.web.app.service_statuses",
+        lambda: [],
+    )
+
+    settings = WebSettings(
+        config_path=config_path,
+        password=PASSWORD,
+        users_path=tmp_path / "users.json",
+        session_key_path=tmp_path / "session.key",
+    )
+
+    with TestClient(
+        create_app(settings),
+        base_url="https://localhost",
+    ) as session:
+        response = session.post(
+            "/api/v1/auth/login",
+            json={
+                "username": "admin",
+                "password": PASSWORD,
+            },
+        )
+
+        assert response.status_code == 200, response.text
+
         yield session
 
 
@@ -59,17 +93,53 @@ def client(config_path: Path, monkeypatch: MonkeyPatch) -> Iterator[TestClient]:
     "/api/v1/openapi.json",
 ])
 def test_endpoints_require_auth(client: TestClient, path: str) -> None:
-    response = client.get(path, auth=None)
-    assert response.status_code == 401
-    assert response.headers["www-authenticate"].startswith("Basic")
+    client.cookies.clear()
+
+    response = client.get(
+        path,
+        follow_redirects=False,
+    )
+
+    if path.startswith("/api/"):
+        assert response.status_code == 401
+    else:
+        assert response.status_code == 303
+        assert response.headers["location"].startswith(
+            "/login?next="
+        )
+
     assert response.headers["cache-control"] == "no-store"
 
 
 def test_wrong_credentials_and_public_health(client: TestClient) -> None:
-    assert client.get("/api/v1/config", auth=("admin", "wrong")).status_code == 401
-    assert client.get("/api/v1/config", auth=("wrong", PASSWORD)).status_code == 401
-    assert client.get("/healthz", auth=None).json() == {"status": "ok"}
-    assert client.post("/api/v1/config/preview", json={}, auth=None).status_code == 401
+    client.cookies.clear()
+
+    assert client.post(
+        "/api/v1/auth/login",
+        json={
+            "username": "admin",
+            "password": "wrong-password",
+        },
+    ).status_code == 401
+
+    assert client.post(
+        "/api/v1/auth/login",
+        json={
+            "username": "wrong",
+            "password": PASSWORD,
+        },
+    ).status_code == 401
+
+    assert client.get(
+        "/healthz"
+    ).json() == {
+        "status": "ok"
+    }
+
+    assert client.post(
+        "/api/v1/config/preview",
+        json={},
+    ).status_code == 401
 
 
 def test_config_export_roundtrip(client: TestClient, config_path: Path) -> None:
@@ -195,7 +265,7 @@ def test_panel_assets_and_api_schema(client: TestClient) -> None:
         assert response.headers["x-content-type-options"] == "nosniff"
     schema = client.get("/api/v1/openapi.json").json()
     assert "post" in schema["paths"]["/api/v1/config/preview"]
-    assert schema["paths"]["/api/v1/config"]["get"]["security"]
+    assert "/api/v1/config" in schema["paths"]
 
 
 def test_settings_reject_missing_or_ambiguous_password(monkeypatch: MonkeyPatch, tmp_path: Path) -> None:
@@ -650,6 +720,7 @@ def test_vpn_config_validate_requires_auth(
     client: TestClient,
     monkeypatch: MonkeyPatch,
 ) -> None:
+    client.cookies.clear()
     monkeypatch.setattr(
         NetworkRuntimeStore,
         "load",
@@ -729,6 +800,7 @@ def test_vpn_config_put_requires_auth(
     client: TestClient,
     monkeypatch: MonkeyPatch,
 ) -> None:
+    client.cookies.clear()
     monkeypatch.setattr(
         NetworkRuntimeStore,
         "load",

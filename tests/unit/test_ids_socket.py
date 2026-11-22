@@ -111,3 +111,33 @@ def test_blackhole_action(
         "count":
             5,
     }
+
+
+def test_ids_socket_deception_dispatch(
+    monkeypatch,
+):
+    monkeypatch.setattr(
+        ids_socket,
+        "add_ids_deception_action",
+        lambda **kwargs: {
+            "status": "quarantined",
+            "source_ip": kwargs["address"],
+            "case_id": "case-test",
+        },
+    )
+
+    result = ids_socket.handle(
+        {
+            "action": "ids-deception-start",
+            "address": "198.18.0.2",
+            "signature_id": 100001,
+            "severity": 1,
+            "count": 5,
+        }
+    )
+
+    assert result["ok"] is True
+    assert (
+        result["result"]["case_id"]
+        == "case-test"
+    )

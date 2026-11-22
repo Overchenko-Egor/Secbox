@@ -10,6 +10,7 @@ from secbox.modules.blacklist.service import (
 from secbox.modules.ids.action_client import (
     IdsActionClientError,
     add_ids_blackhole_via_helper,
+    add_ids_deception_via_helper,
 )
 from secbox.modules.ids.policy import (
     PolicyAction,
@@ -45,6 +46,10 @@ class IdsResponseHandler:
         automatic_blackhole_enabled: bool,
         automatic_blackhole_timeout: str,
         protected_networks: tuple[str, ...],
+        automatic_deception_enabled: bool = False,
+        deception_add: Callable[..., object] = (
+            add_ids_deception_via_helper
+        ),
         blacklist_add: BlacklistAddFunction = (
             add_ids_blackhole_via_helper
         ),
@@ -76,6 +81,10 @@ class IdsResponseHandler:
         )
 
         self.blacklist_add = blacklist_add
+        self.automatic_deception_enabled = (
+            automatic_deception_enabled
+        )
+        self.deception_add = deception_add
 
     def refresh_protected_networks(
         self,
@@ -107,6 +116,38 @@ class IdsResponseHandler:
                 address=None,
                 reason=(
                     "policy decision does not request blocking"
+                ),
+            )
+
+        if self.automatic_deception_enabled:
+            try:
+                self.deception_add(
+                    address=detection.source_ip,
+                    signature_id=detection.signature_id,
+                    severity=detection.severity,
+                    count=detection.count,
+                )
+
+            except IdsActionClientError as error:
+                raise IdsResponseError(
+                    "failed to quarantine IDS source "
+                    f"{detection.source_ip}: {error}"
+                ) from error
+
+            LOGGER.warning(
+                "IDS automatic deception applied "
+                "source=%s sid=%s severity=%s count=%s",
+                detection.source_ip,
+                detection.signature_id,
+                detection.severity,
+                detection.count,
+            )
+
+            return IdsResponseResult(
+                blocked=True,
+                address=detection.source_ip,
+                reason=(
+                    "automatic deception quarantine"
                 ),
             )
 

@@ -956,3 +956,180 @@ def get_ids_runtime_config_action(
             mode="json"
         ),
     }
+
+
+def add_ids_deception_action(
+    *,
+    address: str,
+    signature_id: int,
+    severity: int,
+    count: int,
+) -> dict[str, object]:
+    """Validate and place one IDS source into Deception."""
+
+    if not isinstance(address, str):
+        raise IdsActionError(
+            "address must be a string"
+        )
+
+    for name, value in (
+        ("signature_id", signature_id),
+        ("severity", severity),
+        ("count", count),
+    ):
+        if (
+            not isinstance(value, int)
+            or isinstance(value, bool)
+        ):
+            raise IdsActionError(
+                f"{name} must be an integer"
+            )
+
+    if signature_id <= 0:
+        raise IdsActionError(
+            "signature_id must be greater than zero"
+        )
+
+    if severity not in {1, 2, 3}:
+        raise IdsActionError(
+            "severity must be between 1 and 3"
+        )
+
+    if count <= 0:
+        raise IdsActionError(
+            "count must be greater than zero"
+        )
+
+    ids = get_ids_action()
+
+    if not ids.enabled:
+        raise IdsActionError(
+            "IDS is disabled"
+        )
+
+    if not ids.automatic_deception.enabled:
+        raise IdsActionError(
+            "IDS automatic deception is disabled"
+        )
+
+    if (
+        severity
+        > ids.policy.maximum_block_severity
+    ):
+        raise IdsActionError(
+            "IDS severity does not meet "
+            "automatic response threshold"
+        )
+
+    if (
+        count
+        < ids.policy.minimum_block_count
+    ):
+        raise IdsActionError(
+            "IDS count does not meet "
+            "automatic response threshold"
+        )
+
+    from secbox.modules.deception.steering import (
+        add_source,
+        remove_source,
+        source_is_active,
+        source_operation_lock,
+    )
+    from secbox.modules.deception.runtime import (
+        reconcile,
+    )
+    from secbox.actions.deception import (
+        DeceptionActionError,
+        start_observe_case_action,
+        stop_observe_case_action,
+    )
+
+    with source_operation_lock(address):
+        if source_is_active(address):
+            return {
+                "status": "already_active",
+                "source_ip": address,
+            }
+
+        from datetime import UTC, datetime
+        from secbox.modules.blacklist.service import (
+            parse_timeout,
+        )
+
+        try:
+            deception_ttl = parse_timeout(
+                ids.automatic_deception.timeout
+            )
+        except Exception as error:
+            raise IdsActionError(
+                "invalid automatic deception timeout: "
+                f"{error}"
+            ) from error
+
+        expires_at = (
+            datetime.now(UTC)
+            + deception_ttl
+        )
+
+        try:
+            case = start_observe_case_action(
+                source_ip=address,
+                reason=(
+                    "ids:"
+                    f"sid={signature_id};"
+                    f"severity={severity};"
+                    f"count={count}"
+                ),
+                trigger_source="ids",
+                signature_id=signature_id,
+                severity=severity,
+                count=count,
+                expires_at=expires_at,
+            )
+
+        except DeceptionActionError as error:
+            raise IdsActionError(
+                f"failed to create deception case: {error}"
+            ) from error
+
+        case_id = str(case["case_id"])
+
+        source_added = False
+
+        try:
+            source_added = add_source(
+                source_ip=address,
+                case_id=case_id,
+            )
+
+            runtime = reconcile()
+
+        except Exception as error:
+            if source_added:
+                try:
+                    remove_source(
+                        source_ip=address,
+                        case_id=case_id,
+                    )
+                    reconcile()
+                except Exception:
+                    pass
+
+            try:
+                stop_observe_case_action(
+                    case_id=case_id
+                )
+            except Exception:
+                pass
+
+            raise IdsActionError(
+                f"failed to activate deception quarantine: {error}"
+            ) from error
+
+        return {
+            "status": "quarantined",
+            "source_ip": address,
+            "case_id": case_id,
+            "runtime": runtime,
+        }

@@ -2343,3 +2343,752 @@ main {
     grid-template-columns: 1fr;
   }
 }
+
+
+/* ==========================================================
+   SecBox unified page design system
+   ========================================================== */
+
+.secbox-page-shell {
+  margin: 0;
+  padding: 0;
+  background: transparent;
+}
+
+.secbox-page-card {
+  background: var(--panel);
+  border: 1px solid var(--line);
+  border-radius: 14px;
+  padding: 24px;
+  margin-bottom: 22px;
+}
+
+.secbox-page-card-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 28px;
+  padding-bottom: 22px;
+  margin-bottom: 22px;
+  border-bottom: 1px solid var(--line);
+}
+
+.secbox-page-kicker {
+  margin: 0 0 10px;
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.4;
+  font-weight: 700;
+  letter-spacing: .10em;
+  text-transform: uppercase;
+}
+
+.secbox-page-card-header h2 {
+  margin: 0;
+  font-size: 22px;
+  line-height: 1.25;
+}
+
+.secbox-page-description {
+  max-width: 760px;
+  margin: 12px 0 0;
+  color: var(--muted);
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.secbox-page-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.secbox-page-message {
+  min-height: 20px;
+  margin: 0 0 18px;
+  font-size: 13px;
+}
+
+.secbox-page-section {
+  padding: 22px 0;
+  border-top: 1px solid var(--line);
+}
+
+.secbox-page-message +
+.secbox-page-section {
+  border-top: 0;
+  padding-top: 0;
+}
+
+.secbox-page-section:last-child {
+  padding-bottom: 0;
+}
+
+.secbox-page-section-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 20px;
+  margin-bottom: 16px;
+}
+
+.secbox-page-section-header h3 {
+  margin: 0;
+  font-size: 15px;
+}
+
+.secbox-page-section-header p {
+  margin: 7px 0 0;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.55;
+}
+
+.secbox-table-shell {
+  overflow: auto;
+  background: rgba(0, 0, 0, .08);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 0 14px;
+}
+
+.secbox-summary-grid {
+  display: grid;
+  grid-template-columns:
+    repeat(3, minmax(0, 1fr));
+  gap: 10px;
+  margin-bottom: 18px;
+}
+
+.secbox-summary-grid article {
+  min-width: 0;
+  padding: 14px 16px;
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: 9px;
+}
+
+.secbox-summary-grid span {
+  display: block;
+  margin-bottom: 7px;
+  color: var(--muted);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: .05em;
+}
+
+.secbox-summary-grid strong {
+  display: block;
+  overflow-wrap: anywhere;
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.secbox-status-badge {
+  display: inline-flex;
+  align-items: center;
+  min-height: 24px;
+  padding: 3px 9px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  font-family: inherit;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: .04em;
+}
+
+.secbox-status-badge.active {
+  color: var(--accent);
+  border-color:
+    color-mix(
+      in srgb,
+      var(--accent) 45%,
+      var(--line)
+    );
+}
+
+.secbox-status-badge.danger {
+  color: var(--bad);
+}
+
+.secbox-status-badge.muted,
+.secbox-status-badge.unknown {
+  color: var(--muted);
+}
+
+.secbox-empty-state {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  padding: 26px 10px;
+  text-align: center;
+  white-space: normal;
+}
+
+.secbox-empty-state strong {
+  font-family: inherit;
+  font-size: 13px;
+}
+
+.secbox-empty-state span {
+  color: var(--muted);
+  font-family: inherit;
+  font-size: 12px;
+}
+
+.secbox-table-shell code {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+@media(max-width: 900px) {
+  .secbox-summary-grid {
+    grid-template-columns:
+      repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media(max-width: 760px) {
+  .secbox-page-card {
+    padding: 18px;
+  }
+
+  .secbox-page-card-header,
+  .secbox-page-section-header {
+    flex-direction: column;
+  }
+
+  .secbox-page-toolbar {
+    justify-content: flex-start;
+  }
+
+  .secbox-summary-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+
+/* ==========================================================
+   SecBox unified visual theme
+   Reference: VPN management page
+   ========================================================== */
+
+:root {
+  --secbox-page-bg: #0d141b;
+
+  --secbox-card-bg:
+    rgba(15, 23, 42, 0.62);
+
+  --secbox-card-inner-bg:
+    rgba(15, 23, 42, 0.34);
+
+  --secbox-field-bg:
+    rgba(2, 6, 23, 0.46);
+
+  --secbox-border:
+    rgba(148, 163, 184, 0.22);
+
+  --secbox-border-strong:
+    rgba(148, 163, 184, 0.30);
+
+  --secbox-muted:
+    #9fb3c8;
+
+  --secbox-text:
+    #e9f0f4;
+}
+
+
+/* ----------------------------------------------------------
+   Global page surface
+   ---------------------------------------------------------- */
+
+body {
+  background:
+    var(--secbox-page-bg);
+}
+
+
+/* Every module-level panel uses the VPN surface. */
+
+.panel,
+.vpn-config-panel,
+.firewall-page,
+.ids-page,
+.bh-page,
+.cf-page,
+.services-page,
+.sys-page,
+.secbox-page-card {
+  background:
+    var(--secbox-card-bg) !important;
+
+  border:
+    1px solid
+    var(--secbox-border) !important;
+
+  border-radius:
+    16px;
+}
+
+
+/* Dynamic pages sometimes use panel + module class.
+   Keep one spacing model everywhere. */
+
+.firewall-page,
+.ids-page,
+.bh-page,
+.cf-page,
+.services-page,
+.sys-page,
+.secbox-page-card {
+  padding:
+    24px;
+}
+
+
+/* ----------------------------------------------------------
+   Inner cards
+   ---------------------------------------------------------- */
+
+.vpn-config-tunnel,
+
+.network-card,
+.dhcp-card,
+
+.fw-status-grid article,
+
+.ids-stat,
+.ids-detail-grid > article,
+.ids-signature-row,
+
+.bh-status-grid article,
+.bh-protected code,
+
+.cf-status-grid article,
+.cf-details > div,
+
+.managed-service-card,
+
+.sys-metrics article,
+.sys-details article,
+.sys-power-grid article,
+.sys-temperature-list article,
+.sys-failed-list article,
+
+.secbox-summary-grid article {
+  background:
+    var(--secbox-card-inner-bg) !important;
+
+  border:
+    1px solid
+    var(--secbox-border) !important;
+
+  border-radius:
+    12px;
+}
+
+
+/* Monitoring VPN cards also follow the same hierarchy. */
+
+.vpn-active-card,
+.vpn-tunnel,
+.vpn-l2-card {
+  background:
+    var(--secbox-card-inner-bg) !important;
+
+  border-color:
+    var(--secbox-border);
+}
+
+
+/* ----------------------------------------------------------
+   Inputs
+   ---------------------------------------------------------- */
+
+input:not([type="checkbox"]):not([type="radio"]),
+select,
+textarea {
+  width:
+    100%;
+
+  min-height:
+    38px;
+
+  padding:
+    8px 11px;
+
+  color:
+    var(--secbox-text);
+
+  background:
+    var(--secbox-field-bg) !important;
+
+  border:
+    1px solid
+    var(--secbox-border-strong) !important;
+
+  border-radius:
+    8px;
+
+  outline:
+    none;
+}
+
+
+/* Textarea needs its own vertical behaviour. */
+
+textarea {
+  min-height:
+    110px;
+
+  padding:
+    12px 14px;
+}
+
+
+/* Browser select menu consistency. */
+
+select {
+  color-scheme:
+    dark;
+}
+
+
+/* Readonly / disabled remains visually dark,
+   rather than falling back to browser grey. */
+
+input:disabled,
+input:read-only,
+select:disabled,
+textarea:disabled {
+  color:
+    var(--secbox-muted);
+
+  background:
+    rgba(2, 6, 23, 0.32) !important;
+
+  opacity:
+    1;
+}
+
+
+/* ----------------------------------------------------------
+   Form labels
+   ---------------------------------------------------------- */
+
+label,
+.fw-form-grid label > span,
+.ids-form-grid label > span,
+.bh-form-grid label > span,
+.cf-form-grid label > span,
+.vpn-config-field span {
+  color:
+    var(--secbox-muted);
+}
+
+
+/* ----------------------------------------------------------
+   Checkboxes
+   ---------------------------------------------------------- */
+
+input[type="checkbox"],
+input[type="radio"] {
+  accent-color:
+    var(--accent);
+}
+
+
+/* ----------------------------------------------------------
+   Internal separators
+   ---------------------------------------------------------- */
+
+.fw-subtitle,
+.vpn-config-divider,
+.vpn-l2-runtime-grid,
+.managed-service-note,
+.secbox-page-section,
+.page-tabs,
+#vpn-management-tabs,
+#vpn-monitoring-tabs {
+  border-color:
+    var(--secbox-border) !important;
+}
+
+
+/* ----------------------------------------------------------
+   Tables
+   ---------------------------------------------------------- */
+
+.table-wrap,
+.secbox-table-shell {
+  background:
+    transparent;
+
+  border-color:
+    var(--secbox-border);
+}
+
+table th,
+table td,
+.ids-table th,
+.ids-table td,
+.bh-table th,
+.bh-table td {
+  border-color:
+    var(--secbox-border) !important;
+}
+
+table th {
+  color:
+    var(--secbox-muted);
+}
+
+
+/* ----------------------------------------------------------
+   Page headings
+   ---------------------------------------------------------- */
+
+.section-heading,
+.vpn-config-heading,
+.config-header,
+.network-section-heading,
+.secbox-page-card-header,
+.secbox-page-section-header {
+  color:
+    var(--secbox-text);
+}
+
+.section-heading p,
+.vpn-config-heading p,
+.vpn-config-subtitle,
+.fw-subtitle p,
+.secbox-page-description,
+.secbox-page-section-header p {
+  color:
+    var(--secbox-muted);
+}
+
+
+/* ----------------------------------------------------------
+   Status / info containers
+   ---------------------------------------------------------- */
+
+.tag,
+.secbox-status-badge {
+  background:
+    rgba(15, 23, 42, 0.30);
+
+  border-color:
+    var(--secbox-border);
+}
+
+
+/* ----------------------------------------------------------
+   Generic secondary buttons
+   ---------------------------------------------------------- */
+
+.secondary,
+.vpn-config-secondary {
+  color:
+    var(--secbox-text);
+
+  background:
+    rgba(148, 163, 184, 0.08) !important;
+
+  border:
+    1px solid
+    var(--secbox-border-strong) !important;
+}
+
+.secondary:hover,
+.vpn-config-secondary:hover {
+  background:
+    rgba(148, 163, 184, 0.14) !important;
+}
+
+
+/* ----------------------------------------------------------
+   Module specific cleanup
+   ---------------------------------------------------------- */
+
+/* Network previously had its own fallback variables. */
+
+.network-card,
+.dhcp-card {
+  --panel-bg:
+    var(--secbox-card-inner-bg);
+
+  --border-color:
+    var(--secbox-border);
+}
+
+
+/* Content Filter had a light fallback (#d9dde5). */
+
+.cf-status-grid article,
+.cf-details > div {
+  border-color:
+    var(--secbox-border) !important;
+}
+
+
+/* IDS / Blackhole used another --border fallback. */
+
+.ids-page,
+.bh-page {
+  --border:
+    var(--secbox-border);
+}
+
+
+/* Firewall management should visually match VPN exactly
+   at the outer-container level. */
+
+.firewall-page {
+  margin-top:
+    24px;
+
+  border-radius:
+    16px;
+}
+
+
+/* ----------------------------------------------------------
+   Responsive
+   ---------------------------------------------------------- */
+
+@media(max-width:760px) {
+  .firewall-page,
+  .ids-page,
+  .bh-page,
+  .cf-page,
+  .services-page,
+  .sys-page,
+  .secbox-page-card {
+    padding:
+      18px;
+  }
+}
+
+
+/* Deception destructive action */
+
+.secbox-danger-button {
+  padding: 7px 12px;
+  color: #fca5a5;
+  background: rgba(239, 68, 68, 0.12);
+  border: 1px solid rgba(239, 68, 68, 0.30);
+}
+
+.secbox-danger-button:hover {
+  background: rgba(239, 68, 68, 0.20);
+}
+
+.secbox-danger-button:disabled {
+  opacity: .5;
+}
+
+
+/* ==========================================================
+   SecBox users
+   ========================================================== */
+
+.users-side-nav {
+  display: grid;
+  gap: 2px;
+}
+
+.users-side-nav a {
+  padding: 8px 0;
+  color: var(--muted);
+}
+
+.users-side-nav a.active {
+  color: var(--accent);
+  font-weight: 700;
+}
+
+.users-form {
+  display: grid;
+  grid-template-columns:
+    repeat(
+      auto-fit,
+      minmax(230px, 1fr)
+    );
+  gap: 16px;
+  align-items: end;
+}
+
+.users-form label {
+  margin: 0;
+}
+
+.users-form input {
+  width: 100%;
+  padding: 10px 11px;
+  border: 1px solid
+    rgba(148, 163, 184, .30);
+  border-radius: 8px;
+  background:
+    rgba(2, 6, 23, .46);
+  color: var(--text);
+  font: inherit;
+}
+
+.users-row-actions {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.users-row-actions button {
+  padding: 6px 10px;
+  font-size: 12px;
+}
+
+.danger-button {
+  background:
+    rgba(239, 68, 68, .14);
+  border:
+    1px solid
+    rgba(239, 68, 68, .34);
+  color: #fca5a5;
+}
+
+#users-message {
+  padding: 0;
+  margin: 0 0 16px;
+}
+
+#users-message.good {
+  color: var(--accent);
+}
+
+#users-message.error {
+  color: var(--bad);
+}
+
+
+/* Highlight opened Deception case */
+#deception-detail {
+  scroll-margin-top: 24px;
+}
+
+.deception-detail-focus {
+  animation: deception-detail-highlight 1.6s ease-out;
+}
+
+@keyframes deception-detail-highlight {
+  0% {
+    outline: 2px solid #58d6b2;
+    outline-offset: 6px;
+  }
+  100% {
+    outline: 2px solid transparent;
+    outline-offset: 6px;
+  }
+}

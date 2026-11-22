@@ -447,7 +447,9 @@ def get_dashboard_context_via_helper() -> WebDashboardContext:
 @dataclass(frozen=True)
 class WebContentFilterApplyResult:
     enabled: bool
+    default_action: str
     blocked_domains: int
+    allowed_domains: int
     doh_enabled: bool
     managed_feed_enabled: bool
 
@@ -526,8 +528,14 @@ def apply_content_filter_via_helper(
     try:
         return WebContentFilterApplyResult(
             enabled=bool(result["enabled"]),
+            default_action=str(
+                result["default_action"]
+            ),
             blocked_domains=int(
                 result["blocked_domains"]
+            ),
+            allowed_domains=int(
+                result["allowed_domains"]
             ),
             doh_enabled=bool(
                 result["doh_enabled"]

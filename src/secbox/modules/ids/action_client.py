@@ -216,3 +216,41 @@ def get_ids_runtime_config_via_helper(
             "privileged IDS runtime "
             "configuration is invalid"
         ) from error
+
+
+def add_ids_deception_via_helper(
+    *,
+    address: str,
+    signature_id: int,
+    severity: int,
+    count: int,
+) -> dict[str, object]:
+    """Request IDS-approved Deception quarantine."""
+
+    response = _exchange(
+        {
+            "action": "ids-deception-start",
+            "address": address,
+            "signature_id": signature_id,
+            "severity": severity,
+            "count": count,
+        }
+    )
+
+    if response.get("ok") is not True:
+        detail = response.get("detail")
+
+        raise IdsActionClientError(
+            str(detail)
+            if detail
+            else "privileged IDS deception action failed"
+        )
+
+    result = response.get("result")
+
+    if not isinstance(result, dict):
+        raise IdsActionClientError(
+            "privileged IDS deception result is invalid"
+        )
+
+    return result

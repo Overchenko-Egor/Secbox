@@ -3,10 +3,12 @@ Description=SecBox Deception quarantine runtime
 Requires=secbox-deception-net.service
 Requires=secbox-deception-topology.service
 Requires=secbox-firewall.service
+Requires=secbox-deception-recovery.service
 
 After=secbox-deception-net.service
 After=secbox-deception-topology.service
 After=secbox-firewall.service
+After=secbox-deception-recovery.service
 
 Before=secbox-deception-honeypot.service
 
@@ -19,13 +21,12 @@ RemainAfterExit=yes
 
 User=root
 Group=root
-WorkingDirectory=/home/egor/dev/secbox
+WorkingDirectory=/opt/secbox
 
-Environment=PYTHONPATH=/home/egor/dev/secbox/src
 Environment=PYTHONUNBUFFERED=1
 Environment=PYTHONDONTWRITEBYTECODE=1
 
-ExecStart=/home/egor/dev/secbox/.venv/bin/python -m secbox.modules.deception.runtime
+ExecStart=/opt/secbox/venv/bin/python -m secbox.modules.deception.runtime
 
 NoNewPrivileges=yes
 CapabilityBoundingSet=CAP_NET_ADMIN CAP_SYS_ADMIN CAP_DAC_READ_SEARCH

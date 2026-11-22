@@ -227,6 +227,11 @@ def build_ids_response_handler(
             .automatic_blackhole
             .timeout
         ),
+        automatic_deception_enabled=(
+            config.ids
+            .automatic_deception
+            .enabled
+        ),
         protected_networks=tuple(
             str(network)
             for network in build_protected_networks(

@@ -83,6 +83,22 @@ class AutomaticBlackholeSettings(BaseModel):
     )
 
 
+class AutomaticDeceptionSettings(BaseModel):
+    """Automatic IDS-driven Deception quarantine."""
+
+    model_config = ConfigDict(
+        extra="forbid",
+    )
+
+    enabled: bool = False
+
+    timeout: str = Field(
+        default="15m",
+        min_length=2,
+        max_length=32,
+    )
+
+
 class IdsConfig(BaseModel):
     """Configuration of the SecBox IDS subsystem."""
 
@@ -115,5 +131,11 @@ class IdsConfig(BaseModel):
     automatic_blackhole: AutomaticBlackholeSettings = (
         Field(
             default_factory=AutomaticBlackholeSettings,
+        )
+    )
+
+    automatic_deception: AutomaticDeceptionSettings = (
+        Field(
+            default_factory=AutomaticDeceptionSettings,
         )
     )

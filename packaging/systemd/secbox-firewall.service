@@ -1,0 +1,16 @@
+[Unit]
+Description=SecBox Firewall
+After=network-online.target
+Wants=network-online.target
+Before=secbox-deception-runtime.service
+
+[Service]
+Type=oneshot
+WorkingDirectory=/opt/secbox
+Environment=SECBOX_CONFIG_PATH=/etc/secbox/config.yml
+ExecStart=/usr/bin/secboxctl firewall apply
+RemainAfterExit=yes
+NoNewPrivileges=yes
+
+[Install]
+WantedBy=multi-user.target

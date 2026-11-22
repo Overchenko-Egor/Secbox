@@ -68,6 +68,7 @@ class DeceptionCase(BaseModel):
     created_at: datetime
     updated_at: datetime
     stopped_at: datetime | None = None
+    expires_at: datetime | None = None
 
     trigger: DeceptionTrigger
 

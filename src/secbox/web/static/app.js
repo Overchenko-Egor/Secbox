@@ -972,7 +972,13 @@ function drawAttention(items) {
 }
 
 async function refresh() {
-  byId("refresh").disabled = true;
+  const refreshButton = byId("refresh");
+
+  if (!refreshButton) {
+    return;
+  }
+
+  refreshButton.disabled = true;
   const jobs = [
     ["dashboard", "global-message", drawOverview],
     ["system", "global-message", drawSystem],
@@ -984,20 +990,26 @@ async function refresh() {
     ["vpn/events?limit=10", "vpn-error", drawVpnEvents],
   ];
   await Promise.all(jobs.map(async ([path, errorId, draw]) => {
-    byId(errorId).textContent = "";
+    const errorNode = byId(errorId);
+
+    if (!errorNode) {
+      return;
+    }
+
+    errorNode.textContent = "";
 
     try {
       const data = await api(path);
       draw(data);
     } catch (error) {
-      byId(errorId).textContent =
+      errorNode.textContent =
         `Не удалось обновить данные: ${error.message}. ` +
         "Предыдущие данные, если есть, могут устареть.";
-      byId(errorId).className = "error";
+      errorNode.className = "error";
     }
   }));
 
-  byId("refresh").disabled = false;
+  refreshButton.disabled = false;
 }
 
 async function loadConfig() {
@@ -2986,6 +2998,13 @@ const SECBOX_ROUTES = {
     subtitle: "Динамические блокировки",
   },
 
+  "/monitoring/deception": {
+    page: "monitor-deception",
+    title: "Deception",
+    section: "Мониторинг",
+    subtitle: "Изолированная инфраструктура и корреляция активности",
+  },
+
   "/monitoring/content-filter": {
     page: "monitor-content-filter",
     title: "Content Filter",
@@ -3277,11 +3296,38 @@ function secboxCreateContentFilterPages() {
               placeholder="1.1.1.1&#10;8.8.8.8"></textarea>
           </label>
 
+          <label>
+            <span>Политика DNS</span>
+            <select id="cf-default-action">
+              <option value="allow">
+                Allow by default
+              </option>
+              <option value="block">
+                Block by default
+              </option>
+            </select>
+          </label>
+
           <label class="cf-wide">
             <span>Заблокированные домены</span>
             <textarea id="cf-blocked" rows="7"
               placeholder="example.com&#10;ads.example.net"></textarea>
           </label>
+
+          <label class="cf-wide">
+            <span>Разрешённые домены</span>
+            <textarea id="cf-allowed" rows="7"
+              placeholder="example.org&#10;safe.example.com"></textarea>
+          </label>
+        </div>
+
+        <div class="ids-warning">
+          <strong>DNS policy:</strong>
+          Allow by default разрешает все домены, кроме blocklist.
+          Block by default блокирует DNS-разрешение всех доменов,
+          кроме allowlist. Более точный домен имеет приоритет:
+          например, можно блокировать example.com и разрешить
+          safe.example.com.
         </div>
 
         <h3 class="cf-subtitle">Encrypted DNS</h3>
@@ -3346,11 +3392,6 @@ function secboxCreateContentFilterPages() {
             <input id="cf-feed-max" type="number" min="1">
           </label>
         </div>
-
-        <p class="hint">
-          Сейчас поддерживается политика default_action=allow.
-          Allowed domains пока не поддерживаются backend.
-        </p>
 
         <p id="cf-form-message" class="hint"></p>
 
@@ -3433,10 +3474,24 @@ function cfBuildPayload() {
     },
 
     policy: {
-      default_action: "allow",
+      default_action:
+        document.getElementById(
+          "cf-default-action"
+        ).value,
+
       blocked_domains:
-        cfLines(document.getElementById("cf-blocked").value),
-      allowed_domains: [],
+        cfLines(
+          document.getElementById(
+            "cf-blocked"
+          ).value
+        ),
+
+      allowed_domains:
+        cfLines(
+          document.getElementById(
+            "cf-allowed"
+          ).value
+        ),
     },
 
     encrypted_dns: {
@@ -3495,8 +3550,16 @@ function cfFillForm(cf) {
   document.getElementById("cf-upstreams").value =
     (cf.dns.upstream_servers || []).join("\n");
 
+  document.getElementById(
+    "cf-default-action"
+  ).value =
+    cf.policy.default_action || "allow";
+
   document.getElementById("cf-blocked").value =
     (cf.policy.blocked_domains || []).join("\n");
+
+  document.getElementById("cf-allowed").value =
+    (cf.policy.allowed_domains || []).join("\n");
 
   document.getElementById("cf-block-dot").checked =
     cf.encrypted_dns.block_dot;
@@ -3606,7 +3669,9 @@ async function cfApplyConfig(event) {
     );
 
     message.textContent =
-      `Применено. Заблокированных доменов: ${result.blocked_domains}.`;
+      `Применено. Политика: ${result.default_action}. ` +
+      `Blocklist: ${result.blocked_domains}. ` +
+      `Allowlist: ${result.allowed_domains}.`;
 
     await cfLoadMonitoring();
 
@@ -3907,6 +3972,23 @@ function idsCreatePages() {
                    required>
           </label>
 
+          <label class="ids-check ids-wide">
+            <input id="ids-auto-deception"
+                   type="checkbox">
+            <span>
+              Automatic Deception quarantine
+            </span>
+          </label>
+
+          <label>
+            <span>Deception quarantine TTL</span>
+            <input id="ids-deception-timeout"
+                   type="text"
+                   maxlength="32"
+                   placeholder="15m"
+                   required>
+          </label>
+
           <label>
             <span>EVE log</span>
             <input id="ids-eve-path"
@@ -3917,11 +3999,14 @@ function idsCreatePages() {
         </div>
 
         <div class="ids-warning">
-          Автоблокировка применяется только к
+          Автоматическая реакция применяется только к
           повторным входящим WAN-событиям,
           прошедшим policy thresholds.
+          При включённом Automatic Deception источник
+          направляется в изолированную инфраструктуру
+          вместо Dynamic Blackhole.
           Адреса SecBox и protected networks
-          не блокируются.
+          не обрабатываются автоматически.
         </div>
 
         <div class="ids-actions">
@@ -4248,6 +4333,18 @@ function idsBuildCandidate() {
           "ids-blackhole-timeout"
         ).value.trim(),
     },
+
+    automatic_deception: {
+      enabled:
+        document.getElementById(
+          "ids-auto-deception"
+        ).checked,
+
+      timeout:
+        document.getElementById(
+          "ids-deception-timeout"
+        ).value.trim(),
+    },
   };
 }
 
@@ -4324,6 +4421,22 @@ async function idsLoadConfig() {
       data.ids
         .automatic_blackhole
         .timeout;
+
+    document.getElementById(
+      "ids-auto-deception"
+    ).checked =
+      Boolean(
+        data.ids
+          .automatic_deception
+          ?.enabled
+      );
+
+    document.getElementById(
+      "ids-deception-timeout"
+    ).value =
+      data.ids
+        .automatic_deception
+        ?.timeout || "15m";
 
     document.getElementById(
       "ids-eve-path"
@@ -6236,6 +6349,10 @@ function secboxClassifyPages() {
     globalMessage.dataset.secboxGlobal = "true";
   }
 
+  if (typeof deceptionCreatePage === "function") {
+    deceptionCreatePage();
+  }
+
   const placeholders = [
     [
       "monitor-network",
@@ -6320,6 +6437,10 @@ function secboxClassifyPages() {
 
 
 function secboxUpdateNavigation(route) {
+  if (typeof deceptionPageActivated === "function") {
+    deceptionPageActivated(route.page);
+  }
+
   document.querySelectorAll("[data-page-link]").forEach((link) => {
     let active = link.dataset.pageLink === route.page;
 

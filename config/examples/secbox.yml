@@ -7,7 +7,8 @@ network:
   interfaces:
     - name: ens38
       role: mgmt
-      ipv4_method: dhcp
+      ipv4_method: static
+      ipv4_address: 192.168.100.2/24
 
     - name: ens33
       role: wan

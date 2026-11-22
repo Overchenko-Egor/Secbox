@@ -6,13 +6,13 @@ Wants=network-online.target
 [Service]
 Type=simple
 
-WorkingDirectory=/home/egor/dev/secbox
+WorkingDirectory=/opt/secbox
 
 Environment=SECBOX_CONFIG_PATH=/etc/secbox/config.yml
 Environment=PYTHONUNBUFFERED=1
 
-ExecStartPre=/home/egor/dev/secbox/.venv/bin/secboxctl vpn apply
-ExecStart=/home/egor/dev/secbox/.venv/bin/secboxctl vpn run --interval 3
+ExecStartPre=/usr/bin/secboxctl vpn apply
+ExecStart=/usr/bin/secboxctl vpn run --interval 3
 
 Restart=on-failure
 RestartSec=3s

@@ -1,0 +1,50 @@
+[Unit]
+Description=SecBox Restricted IDS Action Worker
+After=network.target
+
+[Service]
+Type=exec
+
+User=root
+Group=root
+
+WorkingDirectory=/opt/secbox
+
+Environment=SECBOX_CONFIG_PATH=/etc/secbox/config.yml
+Environment=PYTHONUNBUFFERED=1
+Environment=PYTHONDONTWRITEBYTECODE=1
+
+ExecStart=/opt/secbox/venv/bin/python -m secbox.actions.ids_socket
+
+StandardInput=socket
+StandardOutput=socket
+StandardError=journal
+
+NoNewPrivileges=yes
+
+CapabilityBoundingSet=CAP_NET_ADMIN CAP_DAC_READ_SEARCH CAP_CHOWN CAP_FOWNER CAP_SYS_ADMIN
+
+ProtectSystem=strict
+ProtectHome=read-only
+
+ReadWritePaths=/var/lib/secbox
+
+PrivateTmp=yes
+PrivateDevices=yes
+
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+ProtectClock=yes
+ProtectHostname=yes
+
+RestrictAddressFamilies=AF_UNIX AF_INET AF_NETLINK
+
+RestrictRealtime=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+
+SystemCallArchitectures=native
+
+UMask=0077

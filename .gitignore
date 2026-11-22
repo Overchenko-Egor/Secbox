@@ -35,3 +35,47 @@ out/
 
 # Local backup files
 *.bak*
+
+# Python
+.venv/
+__pycache__/
+*.pyc
+
+# SecBox secrets
+.env
+.env.*
+*.key
+*.pem
+web.password
+session.key
+
+# SecBox runtime
+users.json
+blacklist.json
+quarantine.json
+
+# live-build generated data
+live/cache/
+live/chroot/
+live/binary/
+live/.build/
+live/local/
+live/tmp/
+live/*.iso
+live/*.img
+
+# Build artifacts
+dist/
+build/
+*.egg-info/
+
+# live-build generated config
+live/config/binary
+live/config/bootstrap
+live/config/chroot
+live/config/common
+live/config/source
+live/config/hooks/normal/
+live/config/hooks/live/0010-disable-kexec-tools.hook.chroot
+live/config/hooks/live/0050-disable-sysvinit-tmpfs.hook.chroot
+live/config/package-lists/live.list.chroot

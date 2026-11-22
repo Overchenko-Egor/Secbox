@@ -9,7 +9,6 @@ import os
 import socket
 import subprocess
 import time
-from functools import partial
 from pathlib import Path
 
 import pytest
@@ -72,7 +71,26 @@ def test_ids_blackhole_drops_burst_and_expires(tmp_path: Path) -> None:
     assert len(decisions) == 1
     assert decisions[0].action == PolicyAction.BLOCK_CANDIDATE
     store = BlacklistStore(tmp_path / "blacklist.json")
-    add = partial(add_blacklist_entry, store=store)
+    def add(
+        *,
+        address: str,
+        signature_id: int,
+        severity: int,
+        count: int,
+    ) -> None:
+        """Adapt IDS response metadata to the blacklist service."""
+        add_blacklist_entry(
+            address=address,
+            timeout="2s",
+            reason=(
+                f"ids:sid={signature_id};"
+                f"severity={severity};"
+                f"count={count}"
+            ),
+            source="ids",
+            store=store,
+            protected_networks=[DESTINATION + "/32"],
+        )
     disabled = IdsResponseHandler(
         automatic_blackhole_enabled=False, automatic_blackhole_timeout="2s",
         protected_networks=(), blacklist_add=add,

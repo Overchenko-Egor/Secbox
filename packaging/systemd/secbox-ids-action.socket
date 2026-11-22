@@ -1,0 +1,15 @@
+[Unit]
+Description=SecBox Restricted IDS Action Socket
+
+[Socket]
+ListenStream=/run/secbox/ids-action.sock
+
+SocketUser=root
+SocketGroup=secbox-ids
+SocketMode=0660
+
+Accept=yes
+RemoveOnStop=yes
+
+[Install]
+WantedBy=sockets.target

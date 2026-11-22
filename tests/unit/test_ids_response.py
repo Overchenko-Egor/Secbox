@@ -302,3 +302,59 @@ def test_valid_automatic_blackhole_timeout_is_accepted() -> None:
         == "15m"
     )
 
+
+
+def test_automatic_deception_has_priority_over_blackhole() -> None:
+    calls = []
+
+    def deception_add(**kwargs):
+        calls.append(("deception", kwargs))
+        return {"status": "quarantined"}
+
+    def blacklist_add(**kwargs):
+        calls.append(("blackhole", kwargs))
+
+    handler = IdsResponseHandler(
+        automatic_blackhole_enabled=True,
+        automatic_blackhole_timeout="15m",
+        protected_networks=(),
+        automatic_deception_enabled=True,
+        deception_add=deception_add,
+        blacklist_add=blacklist_add,
+    )
+
+    result = handler.handle(
+        make_decision(PolicyAction.BLOCK_CANDIDATE)
+    )
+
+    assert result.blocked is True
+    assert result.reason == (
+        "automatic deception quarantine"
+    )
+
+    assert [name for name, _ in calls] == [
+        "deception"
+    ]
+
+
+def test_automatic_deception_failure_is_normalized() -> None:
+    def deception_add(**kwargs):
+        raise IdsActionClientError(
+            "test deception failure"
+        )
+
+    handler = IdsResponseHandler(
+        automatic_blackhole_enabled=True,
+        automatic_blackhole_timeout="15m",
+        protected_networks=(),
+        automatic_deception_enabled=True,
+        deception_add=deception_add,
+    )
+
+    with pytest.raises(
+        IdsResponseError,
+        match="failed to quarantine IDS source",
+    ):
+        handler.handle(
+            make_decision(PolicyAction.BLOCK_CANDIDATE)
+        )

@@ -486,3 +486,187 @@ def test_ids_blackhole_rejects_disabled_dynamic_blacklist(
                 store=store,
             )
         )
+
+
+def test_ids_deception_rolls_back_source_when_reconcile_fails(
+    monkeypatch,
+) -> None:
+    from secbox.actions import deception as deception_actions
+    from secbox.modules.deception import runtime as deception_runtime
+    from secbox.modules.deception import steering
+
+    calls = []
+
+    ids = IdsConfig.model_validate(
+        {
+            "enabled": True,
+            "policy": {
+                "minimum_alert_count": 2,
+                "minimum_block_count": 5,
+                "maximum_alert_severity": 2,
+                "maximum_block_severity": 1,
+            },
+            "automatic_blackhole": {
+                "enabled": False,
+                "timeout": "15m",
+            },
+            "automatic_deception": {
+                "enabled": True,
+            },
+        }
+    )
+
+    monkeypatch.setattr(
+        ids_actions,
+        "get_ids_action",
+        lambda: ids,
+    )
+
+    monkeypatch.setattr(
+        steering,
+        "source_is_active",
+        lambda source_ip: False,
+    )
+
+    from contextlib import contextmanager
+
+    @contextmanager
+    def fake_source_operation_lock(
+        source_ip,
+    ):
+        yield source_ip
+
+    monkeypatch.setattr(
+        steering,
+        "source_operation_lock",
+        fake_source_operation_lock,
+    )
+
+    monkeypatch.setattr(
+        deception_actions,
+        "start_observe_case_action",
+        lambda **kwargs: {
+            "case_id": "case-test-rollback",
+            "source_ip": kwargs["source_ip"],
+        },
+    )
+
+    def fake_add_source(
+        *,
+        source_ip,
+        case_id,
+    ):
+        calls.append(
+            (
+                "add",
+                source_ip,
+                case_id,
+            )
+        )
+        return True
+
+    def fake_remove_source(
+        *,
+        source_ip,
+        case_id,
+    ):
+        calls.append(
+            (
+                "remove",
+                source_ip,
+                case_id,
+            )
+        )
+        return True
+
+    reconcile_calls = 0
+
+    def fake_reconcile():
+        nonlocal reconcile_calls
+
+        reconcile_calls += 1
+        calls.append(
+            (
+                "reconcile",
+                reconcile_calls,
+            )
+        )
+
+        if reconcile_calls == 1:
+            raise RuntimeError(
+                "simulated reconcile failure"
+            )
+
+        return {
+            "source_count": 0,
+        }
+
+    def fake_stop(
+        *,
+        case_id,
+    ):
+        calls.append(
+            (
+                "stop",
+                case_id,
+            )
+        )
+
+        return {
+            "case_id": case_id,
+            "status": "stopped",
+        }
+
+    monkeypatch.setattr(
+        steering,
+        "add_source",
+        fake_add_source,
+    )
+
+    monkeypatch.setattr(
+        steering,
+        "remove_source",
+        fake_remove_source,
+    )
+
+    monkeypatch.setattr(
+        deception_runtime,
+        "reconcile",
+        fake_reconcile,
+    )
+
+    monkeypatch.setattr(
+        deception_actions,
+        "stop_observe_case_action",
+        fake_stop,
+    )
+
+    with pytest.raises(
+        ids_actions.IdsActionError,
+        match="failed to activate deception quarantine",
+    ):
+        ids_actions.add_ids_deception_action(
+            address="198.18.0.3",
+            signature_id=900001,
+            severity=1,
+            count=5,
+        )
+
+    assert (
+        "add",
+        "198.18.0.3",
+        "case-test-rollback",
+    ) in calls
+
+    assert (
+        "remove",
+        "198.18.0.3",
+        "case-test-rollback",
+    ) in calls
+
+    assert (
+        "stop",
+        "case-test-rollback",
+    ) in calls
+
+    assert reconcile_calls == 2

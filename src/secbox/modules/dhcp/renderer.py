@@ -115,7 +115,19 @@ def render_dnsmasq_config(
 
         lines.append("")
 
-        for domain in content_filter.policy.blocked_domains:
+        policy = content_filter.policy
+
+        if policy.default_action == "block":
+            # Catch-all DNS sinkhole. More-specific server=/domain/
+            # rules below override this for allowed domains.
+            lines.extend(
+                [
+                    "address=/#/0.0.0.0",
+                    "address=/#/::",
+                ]
+            )
+
+        for domain in policy.blocked_domains:
             lines.extend(
                 [
                     f"address=/{domain}/0.0.0.0",
@@ -123,7 +135,21 @@ def render_dnsmasq_config(
                 ]
             )
 
-        if content_filter.policy.blocked_domains:
+        # Allowed domains are rendered as explicit forwarding
+        # exceptions. dnsmasq uses the most-specific matching
+        # domain, so an allowed child can override a blocked
+        # parent and vice versa.
+        for domain in policy.allowed_domains:
+            for server in dns.upstream_servers:
+                lines.append(
+                    f"server=/{domain}/{server}"
+                )
+
+        if (
+            policy.default_action == "block"
+            or policy.blocked_domains
+            or policy.allowed_domains
+        ):
             lines.append("")
 
     output_path.parent.mkdir(

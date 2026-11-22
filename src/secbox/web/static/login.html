@@ -1,0 +1,84 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta
+    name="viewport"
+    content="width=device-width, initial-scale=1"
+  >
+  <title>SecBox — вход</title>
+  <link
+    rel="stylesheet"
+    href="/assets/login.css"
+  >
+  <script
+    src="/assets/login.js"
+    defer
+  ></script>
+</head>
+<body>
+  <main class="login-shell">
+    <section class="login-card">
+      <div class="login-brand">
+        <span class="login-logo">S</span>
+        <div>
+          <strong>SecBox</strong>
+          <span>Security Gateway</span>
+        </div>
+      </div>
+
+      <div class="login-heading">
+        <p>WEB MANAGEMENT</p>
+        <h1>Вход в систему</h1>
+        <span>
+          Введите данные администратора SecBox.
+        </span>
+      </div>
+
+      <form id="login-form">
+        <label>
+          <span>Пользователь</span>
+          <input
+            id="login-username"
+            name="username"
+            type="text"
+            autocomplete="username"
+            maxlength="32"
+            required
+            autofocus
+          >
+        </label>
+
+        <label>
+          <span>Пароль</span>
+          <input
+            id="login-password"
+            name="password"
+            type="password"
+            autocomplete="current-password"
+            maxlength="256"
+            required
+          >
+        </label>
+
+        <p
+          id="login-error"
+          class="login-error"
+          role="alert"
+        ></p>
+
+        <button
+          id="login-submit"
+          type="submit"
+        >
+          Войти
+        </button>
+      </form>
+
+      <footer>
+        SecBox Web Console · HTTPS
+      </footer>
+    </section>
+  </main>
+</body>
+</html>

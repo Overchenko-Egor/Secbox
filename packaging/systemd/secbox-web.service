@@ -1,0 +1,51 @@
+[Unit]
+Description=SecBox Web Management
+After=network-online.target secbox-action.socket
+Wants=network-online.target
+Requires=secbox-action.socket
+
+[Service]
+Type=simple
+User=secbox-web
+Group=secbox-web
+WorkingDirectory=/opt/secbox
+
+Environment=SECBOX_CONFIG_PATH=/etc/secbox/config.yml
+Environment=SECBOX_WEB_PASSWORD_FILE=/etc/secbox/web.password
+Environment=SECBOX_WEB_USERS_FILE=/var/lib/secbox/web/users.json
+Environment=SECBOX_WEB_SESSION_KEY_FILE=/var/lib/secbox/web/session.key
+Environment=PYTHONUNBUFFERED=1
+Environment=PYTHONDONTWRITEBYTECODE=1
+
+ExecStart=/usr/bin/secboxctl web serve --port 8000
+
+Restart=on-failure
+RestartSec=3s
+
+NoNewPrivileges=yes
+PrivateTmp=yes
+ProtectSystem=strict
+ProtectHome=yes
+
+ReadOnlyPaths=/etc/secbox/config.yml
+ReadOnlyPaths=/etc/secbox/web.password
+ReadWritePaths=/var/lib/secbox/web
+
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+ProtectClock=yes
+ProtectHostname=yes
+RestrictSUIDSGID=yes
+RestrictNamespaces=yes
+RestrictRealtime=yes
+LockPersonality=yes
+MemoryDenyWriteExecute=yes
+RestrictAddressFamilies=AF_UNIX AF_INET AF_NETLINK
+CapabilityBoundingSet=
+SystemCallArchitectures=native
+UMask=0077
+
+[Install]
+WantedBy=multi-user.target

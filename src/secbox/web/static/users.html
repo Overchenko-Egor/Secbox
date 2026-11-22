@@ -1,0 +1,285 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta
+    name="viewport"
+    content="width=device-width, initial-scale=1"
+  >
+  <title>SecBox — пользователи</title>
+  <link
+    rel="stylesheet"
+    href="/assets/style.css"
+  >
+  <script
+    src="/assets/users.js"
+    defer
+  ></script>
+</head>
+<body>
+  <aside>
+    <a class="brand" href="/">
+      <span class="brand-mark">S</span>
+      SecBox
+    </a>
+
+    <p class="eyebrow">
+      Управление шлюзом
+    </p>
+
+    <nav class="users-side-nav">
+      <a href="/">
+        ← Обзор
+      </a>
+
+      <a href="/manage/network/interfaces">
+        Сеть
+      </a>
+
+      <a href="/manage/vpn/l3">
+        VPN
+      </a>
+
+      <a href="/manage/firewall">
+        Firewall
+      </a>
+
+      <a href="/manage/ids">
+        IDS / IPS
+      </a>
+
+      <a href="/manage/blackhole">
+        Blackhole
+      </a>
+
+      <a href="/manage/content-filter">
+        Content Filter
+      </a>
+
+      <a
+        href="/manage/users"
+        class="active"
+      >
+        Пользователи
+      </a>
+
+      <a href="/manage/services">
+        Службы
+      </a>
+
+      <a href="/manage/system">
+        Система
+      </a>
+    </nav>
+
+    <div class="aside-note">
+      ● SecBox Web Console
+    </div>
+  </aside>
+
+  <main>
+    <header>
+      <div>
+        <p class="eyebrow">
+          Управление / Пользователи
+        </p>
+        <h1>Пользователи</h1>
+        <p>
+          Управление доступом к Web Console.
+        </p>
+      </div>
+
+      <div class="header-actions">
+        <span
+          id="current-user"
+          class="tag"
+        >
+          —
+        </span>
+
+        <button
+          id="logout"
+          type="button"
+          class="secondary"
+        >
+          Выйти
+        </button>
+      </div>
+    </header>
+
+    <p
+      id="users-message"
+      role="status"
+    ></p>
+
+    <section class="panel">
+      <div class="section-heading">
+        <div>
+          <p class="eyebrow">
+            Учётные записи
+          </p>
+          <h2>
+            Администраторы SecBox
+          </h2>
+        </div>
+
+        <button
+          id="users-refresh"
+          type="button"
+          class="secondary"
+        >
+          Обновить
+        </button>
+      </div>
+
+      <div class="table-wrap">
+        <table>
+          <thead>
+            <tr>
+              <th>
+                Пользователь
+              </th>
+              <th>Роль</th>
+              <th>Статус</th>
+              <th>Действия</th>
+            </tr>
+          </thead>
+
+          <tbody id="users-body">
+          </tbody>
+        </table>
+      </div>
+    </section>
+
+    <section class="panel">
+      <div class="section-heading">
+        <div>
+          <p class="eyebrow">
+            Новая учётная запись
+          </p>
+          <h2>
+            Создать пользователя
+          </h2>
+        </div>
+      </div>
+
+      <form
+        id="create-user-form"
+        class="users-form"
+      >
+        <label>
+          <span>
+            Имя пользователя
+          </span>
+          <input
+            id="new-username"
+            type="text"
+            autocomplete="off"
+            maxlength="32"
+            required
+          >
+        </label>
+
+        <label>
+          <span>Пароль</span>
+          <input
+            id="new-password"
+            type="password"
+            autocomplete="new-password"
+            minlength="12"
+            maxlength="256"
+            required
+          >
+        </label>
+
+        <label>
+          <span>
+            Повторите пароль
+          </span>
+          <input
+            id="new-password-repeat"
+            type="password"
+            autocomplete="new-password"
+            minlength="12"
+            maxlength="256"
+            required
+          >
+        </label>
+
+        <div>
+          <button type="submit">
+            Создать пользователя
+          </button>
+        </div>
+      </form>
+    </section>
+
+    <section
+      id="password-panel"
+      class="panel"
+      hidden
+    >
+      <div class="section-heading">
+        <div>
+          <p class="eyebrow">
+            Учётная запись
+          </p>
+          <h2 id="password-title">
+            Смена пароля
+          </h2>
+        </div>
+      </div>
+
+      <form
+        id="password-form"
+        class="users-form"
+      >
+        <input
+          id="password-username"
+          type="hidden"
+        >
+
+        <label>
+          <span>Новый пароль</span>
+          <input
+            id="change-password"
+            type="password"
+            autocomplete="new-password"
+            minlength="12"
+            maxlength="256"
+            required
+          >
+        </label>
+
+        <label>
+          <span>
+            Повторите пароль
+          </span>
+          <input
+            id="change-password-repeat"
+            type="password"
+            autocomplete="new-password"
+            minlength="12"
+            maxlength="256"
+            required
+          >
+        </label>
+
+        <div class="actions">
+          <button type="submit">
+            Изменить пароль
+          </button>
+
+          <button
+            id="password-cancel"
+            type="button"
+            class="secondary"
+          >
+            Отмена
+          </button>
+        </div>
+      </form>
+    </section>
+  </main>
+</body>
+</html>

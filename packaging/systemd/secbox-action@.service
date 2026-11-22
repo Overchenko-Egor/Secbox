@@ -8,13 +8,13 @@ Type=exec
 User=root
 Group=root
 
-WorkingDirectory=/home/egor/dev/secbox
+WorkingDirectory=/opt/secbox
 
 Environment=SECBOX_CONFIG_PATH=/etc/secbox/config.yml
 Environment=PYTHONUNBUFFERED=1
 Environment=PYTHONDONTWRITEBYTECODE=1
 
-ExecStart=/home/egor/dev/secbox/.venv/bin/secbox-action socket-request
+ExecStart=/opt/secbox/venv/bin/secbox-action socket-request
 
 StandardInput=socket
 StandardOutput=socket

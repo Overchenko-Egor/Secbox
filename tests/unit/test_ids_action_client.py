@@ -229,3 +229,45 @@ def test_ids_runtime_config_client_uses_restricted_action(
     ]
 
     assert config.ids.enabled is True
+
+
+def test_ids_deception_client_sends_minimal_metadata(
+    monkeypatch,
+):
+    captured = {}
+
+    def fake_exchange(request):
+        captured.update(request)
+        return {
+            "ok": True,
+            "result": {
+                "status": "quarantined",
+                "case_id": "case-test",
+            },
+        }
+
+    monkeypatch.setattr(
+        action_client,
+        "_exchange",
+        fake_exchange,
+    )
+
+    result = (
+        action_client
+        .add_ids_deception_via_helper(
+            address="198.18.0.2",
+            signature_id=100001,
+            severity=1,
+            count=5,
+        )
+    )
+
+    assert captured == {
+        "action": "ids-deception-start",
+        "address": "198.18.0.2",
+        "signature_id": 100001,
+        "severity": 1,
+        "count": 5,
+    }
+
+    assert result["status"] == "quarantined"

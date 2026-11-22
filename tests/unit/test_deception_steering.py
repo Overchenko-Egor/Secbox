@@ -174,3 +174,25 @@ def test_state_file_is_private(
         path.stat().st_mode
         & 0o777
     ) == 0o600
+
+
+def test_source_operation_lock_uses_custom_state_path(
+    tmp_path: Path,
+) -> None:
+    path = (
+        tmp_path
+        / "deception"
+        / "quarantine.json"
+    )
+
+    with steering.source_operation_lock(
+        "198.18.0.50",
+        path=path,
+    ) as address:
+        assert address == "198.18.0.50"
+
+    assert (
+        path.parent
+        / "locks"
+        / "198.18.0.50.lock"
+    ).exists()

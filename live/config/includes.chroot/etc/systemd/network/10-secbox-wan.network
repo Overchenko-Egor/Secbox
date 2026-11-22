@@ -1,0 +1,6 @@
+[Match]
+Name=ens33
+
+[Network]
+DHCP=ipv4
+IPv6AcceptRA=no

@@ -12,15 +12,14 @@ Type=simple
 User=secbox-deception
 Group=secbox-deception
 
-WorkingDirectory=/home/egor/dev/secbox
+WorkingDirectory=/opt/secbox
 
-Environment=PYTHONPATH=/home/egor/dev/secbox/src
 Environment=PYTHONUNBUFFERED=1
 Environment=PYTHONDONTWRITEBYTECODE=1
 
 NetworkNamespacePath=/run/netns/secbox-deception
 
-ExecStart=/home/egor/dev/secbox/.venv/bin/python -m secbox.modules.deception.honeypot
+ExecStart=/opt/secbox/venv/bin/python -m secbox.modules.deception.honeypot
 
 Restart=on-failure
 RestartSec=3s

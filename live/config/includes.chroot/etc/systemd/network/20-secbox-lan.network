@@ -1,0 +1,7 @@
+[Match]
+Name=ens36
+
+[Network]
+Address=192.168.50.1/24
+IPv6AcceptRA=no
+LinkLocalAddressing=no

@@ -8,12 +8,12 @@ Wants=network-online.target
 [Service]
 Type=simple
 
-WorkingDirectory=/home/egor/dev/secbox
+WorkingDirectory=/opt/secbox
 
 Environment=SECBOX_CONFIG_PATH=/etc/secbox/config.yml
 Environment=PYTHONUNBUFFERED=1
 
-ExecStart=/home/egor/dev/secbox/.venv/bin/secboxctl ids run
+ExecStart=/usr/bin/secboxctl ids run
 
 Restart=on-failure
 RestartSec=3s

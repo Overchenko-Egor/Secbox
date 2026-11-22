@@ -9,6 +9,13 @@ from secbox.modules.content_filter.models import ContentFilterConfig
 from secbox.modules.content_filter.validator import validate_content_filter_config
 from secbox.modules.dhcp.executor import apply_dnsmasq_config
 from secbox.modules.dhcp.renderer import render_dnsmasq_config
+from secbox.modules.content_filter.doh_feed.models import (
+    DohFeedState,
+)
+from secbox.modules.content_filter.doh_feed.store import (
+    DohFeedStore,
+    DohFeedStoreError,
+)
 
 
 CONFIG_PATH = Path("/etc/secbox/config.yml")
@@ -25,7 +32,9 @@ class ContentFilterActionError(RuntimeError):
 @dataclass(frozen=True)
 class ContentFilterActionResult:
     enabled: bool
+    default_action: str
     blocked_domains: int
+    allowed_domains: int
     doh_enabled: bool
     managed_feed_enabled: bool
 
@@ -64,6 +73,54 @@ def _systemctl(action: str, unit: str) -> None:
         )
 
 
+def _managed_feed_active(config) -> bool:
+    """Return whether managed DoH must be active."""
+
+    content_filter = config.content_filter
+
+    if content_filter is None:
+        return False
+
+    doh = content_filter.encrypted_dns.doh
+
+    return bool(
+        content_filter.enabled
+        and doh.enabled
+        and doh.managed_feed_enabled
+    )
+
+
+def _restore_feed_units(
+    *,
+    active: bool,
+) -> None:
+    """Restore timer lifecycle without forcing a feed refresh."""
+
+    if active:
+        _systemctl(
+            "enable",
+            "secbox-doh-feed.timer",
+        )
+        _systemctl(
+            "start",
+            "secbox-doh-feed.timer",
+        )
+        return
+
+    _systemctl(
+        "stop",
+        "secbox-doh-feed.service",
+    )
+    _systemctl(
+        "stop",
+        "secbox-doh-feed.timer",
+    )
+    _systemctl(
+        "disable",
+        "secbox-doh-feed.timer",
+    )
+
+
 def get_content_filter_action(
     *,
     store: ConfigStore | None = None,
@@ -80,6 +137,21 @@ def apply_content_filter_action(
     store = store or ConfigStore(CONFIG_PATH)
     previous = store.load()
 
+    doh_store = DohFeedStore()
+
+    try:
+        previous_doh_state = doh_store.load()
+
+    except DohFeedStoreError as error:
+        raise ContentFilterActionError(
+            "failed to load previous managed DoH state: "
+            f"{error}"
+        ) from error
+
+    previous_feed_active = (
+        _managed_feed_active(previous)
+    )
+
     candidate = previous.model_copy(
         update={"content_filter": content_filter}
     )
@@ -95,40 +167,116 @@ def apply_content_filter_action(
             f"Content Filter validation failed: {error}"
         ) from error
 
+    candidate_feed_active = (
+        _managed_feed_active(candidate)
+    )
+
+    previous_doh = (
+        previous.content_filter.encrypted_dns.doh
+        if (
+            previous.content_filter is not None
+        )
+        else None
+    )
+
+    candidate_doh = (
+        candidate.content_filter.encrypted_dns.doh
+        if (
+            candidate.content_filter is not None
+        )
+        else None
+    )
+
+    feed_configuration_changed = (
+        previous_doh != candidate_doh
+    )
+
     try:
         store.save(candidate)
 
         _apply_dns(candidate)
 
+        if not candidate_feed_active:
+            # Stop every producer before clearing its state.
+            _systemctl(
+                "stop",
+                "secbox-doh-feed.service",
+            )
+            _systemctl(
+                "stop",
+                "secbox-doh-feed.timer",
+            )
+            _systemctl(
+                "disable",
+                "secbox-doh-feed.timer",
+            )
+
+            doh_store.save(
+                DohFeedState()
+            )
+
+        elif not previous_feed_active:
+            # Legacy/stale managed state must never be reused when
+            # the feed is enabled again. Start from static resolvers
+            # and require a fresh successful download.
+            doh_store.save(
+                DohFeedState()
+            )
+
+        # Firewall reads the candidate configuration and current
+        # managed state, therefore this establishes the exact
+        # effective static + managed DoH set.
         _systemctl(
             "restart",
             "secbox-firewall.service",
         )
 
-        doh = candidate.content_filter.encrypted_dns.doh
-
-        if (
-            candidate.content_filter.enabled
-            and doh.enabled
-            and doh.managed_feed_enabled
-        ):
+        if candidate_feed_active:
+            _systemctl(
+                "enable",
+                "secbox-doh-feed.timer",
+            )
             _systemctl(
                 "start",
-                "secbox-doh-feed.service",
+                "secbox-doh-feed.timer",
             )
+
+            if (
+                not previous_feed_active
+                or feed_configuration_changed
+            ):
+                # Immediate refresh when enabling the feed or
+                # changing its source/settings.
+                _systemctl(
+                    "start",
+                    "secbox-doh-feed.service",
+                )
 
     except Exception as error:
         rollback_errors = []
 
         try:
             store.save(previous)
+
         except Exception as rollback_error:
             rollback_errors.append(
                 f"config rollback: {rollback_error}"
             )
 
         try:
+            doh_store.save(
+                previous_doh_state
+            )
+
+        except Exception as rollback_error:
+            rollback_errors.append(
+                "DoH state rollback: "
+                f"{rollback_error}"
+            )
+
+        try:
             _apply_dns(previous)
+
         except Exception as rollback_error:
             rollback_errors.append(
                 f"DNS rollback: {rollback_error}"
@@ -139,9 +287,21 @@ def apply_content_filter_action(
                 "restart",
                 "secbox-firewall.service",
             )
+
         except Exception as rollback_error:
             rollback_errors.append(
                 f"firewall rollback: {rollback_error}"
+            )
+
+        try:
+            _restore_feed_units(
+                active=previous_feed_active,
+            )
+
+        except Exception as rollback_error:
+            rollback_errors.append(
+                "DoH unit rollback: "
+                f"{rollback_error}"
             )
 
         detail = (
@@ -156,10 +316,18 @@ def apply_content_filter_action(
 
     return ContentFilterActionResult(
         enabled=content_filter.enabled,
+        default_action=(
+            content_filter.policy.default_action
+        ),
         blocked_domains=len(
             content_filter.policy.blocked_domains
         ),
-        doh_enabled=content_filter.encrypted_dns.doh.enabled,
+        allowed_domains=len(
+            content_filter.policy.allowed_domains
+        ),
+        doh_enabled=(
+            content_filter.encrypted_dns.doh.enabled
+        ),
         managed_feed_enabled=(
             content_filter.encrypted_dns.doh.managed_feed_enabled
         ),

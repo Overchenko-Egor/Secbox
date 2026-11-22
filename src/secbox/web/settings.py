@@ -12,6 +12,12 @@ class WebSettings:
     config_path: Path
     password: str = field(repr=False)
     username: str = "admin"
+    users_path: Path = Path(
+        "/var/lib/secbox/web/users.json"
+    )
+    session_key_path: Path = Path(
+        "/var/lib/secbox/web/session.key"
+    )
 
     def __post_init__(self) -> None:
         if len(self.password) < 16 or not self.password.isascii() or not self.password.isprintable():
@@ -33,4 +39,16 @@ class WebSettings:
             config_path=get_config_path(),
             password=password,
             username=os.environ.get("SECBOX_WEB_USER", "admin"),
+            users_path=Path(
+                os.environ.get(
+                    "SECBOX_WEB_USERS_FILE",
+                    "/var/lib/secbox/web/users.json",
+                )
+            ),
+            session_key_path=Path(
+                os.environ.get(
+                    "SECBOX_WEB_SESSION_KEY_FILE",
+                    "/var/lib/secbox/web/session.key",
+                )
+            ),
         )

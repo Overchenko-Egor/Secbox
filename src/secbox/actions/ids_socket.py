@@ -8,6 +8,7 @@ import sys
 from secbox.actions.ids import (
     IdsActionError,
     add_ids_blackhole_action,
+    add_ids_deception_action,
     get_ids_runtime_config_action,
 )
 
@@ -202,6 +203,63 @@ def handle(
             "ok": True,
             "result":
                 result_payload,
+        }
+
+    if action == "ids-deception-start":
+        expected = {
+            "action",
+            "address",
+            "signature_id",
+            "severity",
+            "count",
+        }
+
+        if set(request) != expected:
+            raise ValueError(
+                "unexpected ids-deception-start fields"
+            )
+
+        address = request["address"]
+        signature_id = request["signature_id"]
+        severity = request["severity"]
+        count = request["count"]
+
+        if not isinstance(address, str):
+            raise ValueError(
+                "address must be a string"
+            )
+
+        for name, value in (
+            ("signature_id", signature_id),
+            ("severity", severity),
+            ("count", count),
+        ):
+            if (
+                not isinstance(value, int)
+                or isinstance(value, bool)
+            ):
+                raise ValueError(
+                    f"{name} must be an integer"
+                )
+
+        try:
+            result = add_ids_deception_action(
+                address=address,
+                signature_id=signature_id,
+                severity=severity,
+                count=count,
+            )
+
+        except IdsActionError as error:
+            return {
+                "ok": False,
+                "error": "ids_deception_failed",
+                "detail": str(error),
+            }
+
+        return {
+            "ok": True,
+            "result": result,
         }
 
     raise ValueError(

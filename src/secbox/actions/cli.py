@@ -1266,7 +1266,15 @@ def socket_request() -> None:
                     "ok": True,
                     "result": {
                         "enabled": result.enabled,
-                        "blocked_domains": result.blocked_domains,
+                        "default_action": (
+                            result.default_action
+                        ),
+                        "blocked_domains": (
+                            result.blocked_domains
+                        ),
+                        "allowed_domains": (
+                            result.allowed_domains
+                        ),
                         "doh_enabled": result.doh_enabled,
                         "managed_feed_enabled": (
                             result.managed_feed_enabled
@@ -1493,6 +1501,86 @@ def socket_request() -> None:
                     "ok": True,
                     "result":
                         result,
+                }
+            )
+            return
+
+        if action == "get-deception-quarantine":
+            if set(request) != {
+                "action",
+            }:
+                raise ValueError(
+                    "unexpected get-deception-quarantine fields"
+                )
+
+            from secbox.actions.deception import (
+                list_deception_quarantine_action,
+            )
+
+            try:
+                result = (
+                    list_deception_quarantine_action()
+                )
+
+            except Exception as error:
+                _emit(
+                    {
+                        "ok": False,
+                        "error":
+                            "deception_quarantine_failed",
+                        "detail":
+                            str(error),
+                    }
+                )
+                return
+
+            _emit(
+                {
+                    "ok": True,
+                    "result": result,
+                }
+            )
+            return
+
+        if action == "release-deception-quarantine":
+            if set(request) != {
+                "action",
+                "case_id",
+            }:
+                raise ValueError(
+                    "unexpected release-deception-quarantine fields"
+                )
+
+            from secbox.actions.deception import (
+                DeceptionActionError,
+                release_deception_quarantine_action,
+            )
+
+            try:
+                result = (
+                    release_deception_quarantine_action(
+                        case_id=request[
+                            "case_id"
+                        ]
+                    )
+                )
+
+            except DeceptionActionError as error:
+                _emit(
+                    {
+                        "ok": False,
+                        "error":
+                            "deception_release_failed",
+                        "detail":
+                            str(error),
+                    }
+                )
+                return
+
+            _emit(
+                {
+                    "ok": True,
+                    "result": result,
                 }
             )
             return

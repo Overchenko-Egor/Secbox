@@ -2,6 +2,7 @@
 
 import os
 import shutil
+import stat
 import tempfile
 from pathlib import Path
 from typing import Any
@@ -91,7 +92,7 @@ class ConfigStore:
                 file.flush()
                 os.fsync(file.fileno())
 
-            temporary_path.chmod(0o600)
+            self._apply_target_metadata(temporary_path)
 
             if self.config_path.exists():
                 shutil.copy2(self.config_path, self.backup_path)
@@ -165,7 +166,7 @@ class ConfigStore:
                 file.flush()
                 os.fsync(file.fileno())
 
-            temporary_path.chmod(0o600)
+            self._apply_target_metadata(temporary_path)
             os.replace(temporary_path, self.config_path)
             temporary_path = None
 
@@ -177,6 +178,43 @@ class ConfigStore:
         finally:
             if temporary_path is not None:
                 temporary_path.unlink(missing_ok=True)
+
+    def _apply_target_metadata(self, path: Path) -> None:
+        """Apply secure metadata to an atomic replacement file.
+
+        A new configuration defaults to owner-only access.  When replacing
+        an existing file, preserve its mode and, when running as root, its
+        owner/group.  This keeps the production root:secbox-web 0640 policy
+        intact across atomic saves and rollbacks.
+        """
+        if not self.config_path.exists():
+            path.chmod(0o600)
+            return
+
+        target_stat = self.config_path.stat()
+        path.chmod(stat.S_IMODE(target_stat.st_mode))
+
+        if os.geteuid() == 0:
+            os.chown(
+                path,
+                target_stat.st_uid,
+                target_stat.st_gid,
+            )
+
+    def _apply_target_metadata(self, path: Path) -> None:
+        if not self.config_path.exists():
+            path.chmod(0o600)
+            return
+
+        target_stat = self.config_path.stat()
+        path.chmod(stat.S_IMODE(target_stat.st_mode))
+
+        if os.geteuid() == 0:
+            os.chown(
+                path,
+                target_stat.st_uid,
+                target_stat.st_gid,
+            )
 
     @staticmethod
     def _validate(raw_data: dict[str, Any]) -> SecBoxConfig:

@@ -1,0 +1,71 @@
+#!/bin/sh
+set -eu
+
+MARKER=/var/lib/secbox/.firstboot-complete
+
+if [ -e "$MARKER" ]; then
+    exit 0
+fi
+
+install -d -o root -g secbox-web -m 0710 /etc/secbox
+install -d -o root -g root -m 0700 /etc/secbox/tls
+install -d -o secbox-web -g secbox-web -m 0700 /var/lib/secbox/web
+
+if [ ! -s /etc/secbox/web.password ]; then
+    umask 0077
+    openssl rand -hex 16 > /etc/secbox/web.password
+fi
+
+chown root:secbox-web /etc/secbox/web.password
+chmod 0640 /etc/secbox/web.password
+
+if [ -f /etc/secbox/config.yml ]; then
+    chown root:secbox-web /etc/secbox/config.yml
+    chmod 0640 /etc/secbox/config.yml
+fi
+
+if [ ! -s /etc/secbox/tls/secbox-web.key ] || \
+   [ ! -s /etc/secbox/tls/secbox-web.crt ]; then
+
+    rm -f \
+        /etc/secbox/tls/secbox-web.key \
+        /etc/secbox/tls/secbox-web.crt
+
+    openssl req \
+        -x509 \
+        -newkey rsa:3072 \
+        -sha256 \
+        -nodes \
+        -days 3650 \
+        -keyout /etc/secbox/tls/secbox-web.key \
+        -out /etc/secbox/tls/secbox-web.crt \
+        -subj '/CN=secbox' \
+        -addext 'subjectAltName=DNS:secbox,IP:192.168.100.2'
+fi
+
+chown root:root \
+    /etc/secbox/tls/secbox-web.key \
+    /etc/secbox/tls/secbox-web.crt
+
+chmod 0600 /etc/secbox/tls/secbox-web.key
+chmod 0644 /etc/secbox/tls/secbox-web.crt
+
+/usr/bin/secboxctl config validate
+
+touch "$MARKER"
+chmod 0600 "$MARKER"
+
+mkdir -p /etc/issue.d
+
+cat > /etc/issue.d/secbox.conf <<'MSG'
+
+SecBox management:
+  https://192.168.100.2:8443/
+
+Initial Web user:
+  admin
+
+Initial Web password:
+  sudo cat /etc/secbox/web.password
+
+MSG

@@ -39,7 +39,9 @@ def make_dhcp() -> DhcpServerConfig:
 def make_filter(
     *,
     enabled: bool = True,
+    default_action: str = "allow",
     blocked_domains: list[str] | None = None,
+    allowed_domains: list[str] | None = None,
 ) -> ContentFilterConfig:
     return ContentFilterConfig(
         enabled=enabled,
@@ -50,7 +52,9 @@ def make_filter(
             upstream_servers=["1.1.1.1", "8.8.8.8"],
         ),
         policy=ContentFilterPolicyConfig(
+            default_action=default_action,
             blocked_domains=blocked_domains or [],
+            allowed_domains=allowed_domains or [],
         ),
     )
 
@@ -274,28 +278,21 @@ def test_enabled_filter_requires_firewall() -> None:
         validate_content_filter_config(config)
 
 
-def test_default_block_policy_is_rejected() -> None:
+def test_default_block_policy_passes_preflight() -> None:
     config = make_secbox_config(
         default_action="block",
+        allowed_domains=["example.com"],
     )
 
-    with pytest.raises(
-        ContentFilterValidationError,
-        match="default_action='block' is not supported yet",
-    ):
-        validate_content_filter_config(config)
+    validate_content_filter_config(config)
 
 
-def test_allowed_domains_are_rejected_for_now() -> None:
+def test_allowed_domains_pass_preflight() -> None:
     config = make_secbox_config(
         allowed_domains=["example.com"],
     )
 
-    with pytest.raises(
-        ContentFilterValidationError,
-        match="allowed_domains is not supported yet",
-    ):
-        validate_content_filter_config(config)
+    validate_content_filter_config(config)
 
 
 def test_content_filter_must_use_lan_interface() -> None:
@@ -401,3 +398,529 @@ def test_managed_feed_url_rejects_http() -> None:
                 "http://example.test/doh.txt"
             )
         )
+
+
+def test_default_block_renders_global_sinkhole(
+    tmp_path: Path,
+) -> None:
+    path = render_dnsmasq_config(
+        [make_dhcp()],
+        tmp_path / "dnsmasq.conf",
+        content_filter=make_filter(
+            default_action="block",
+            allowed_domains=[
+                "example.com",
+            ],
+        ),
+    )
+
+    text = path.read_text()
+
+    assert "address=/#/0.0.0.0" in text
+    assert "address=/#/::" in text
+
+    assert (
+        "server=/example.com/1.1.1.1"
+        in text
+    )
+
+    assert (
+        "server=/example.com/8.8.8.8"
+        in text
+    )
+
+
+def test_allowlist_can_override_blocked_parent(
+    tmp_path: Path,
+) -> None:
+    path = render_dnsmasq_config(
+        [make_dhcp()],
+        tmp_path / "dnsmasq.conf",
+        content_filter=make_filter(
+            default_action="allow",
+            blocked_domains=[
+                "example.com",
+            ],
+            allowed_domains=[
+                "safe.example.com",
+            ],
+        ),
+    )
+
+    text = path.read_text()
+
+    assert (
+        "address=/example.com/0.0.0.0"
+        in text
+    )
+
+    assert (
+        "server=/safe.example.com/1.1.1.1"
+        in text
+    )
+
+
+def test_blocked_child_can_override_allowed_parent(
+    tmp_path: Path,
+) -> None:
+    path = render_dnsmasq_config(
+        [make_dhcp()],
+        tmp_path / "dnsmasq.conf",
+        content_filter=make_filter(
+            default_action="block",
+            allowed_domains=[
+                "example.com",
+            ],
+            blocked_domains=[
+                "ads.example.com",
+            ],
+        ),
+    )
+
+    text = path.read_text()
+
+    assert (
+        "server=/example.com/1.1.1.1"
+        in text
+    )
+
+    assert (
+        "address=/ads.example.com/0.0.0.0"
+        in text
+    )
+
+
+def test_exact_allow_block_conflict_remains_rejected(
+) -> None:
+    with pytest.raises(
+        ValidationError,
+        match="domains cannot be both allowed and blocked",
+    ):
+        ContentFilterPolicyConfig(
+            default_action="block",
+            allowed_domains=[
+                "example.com",
+            ],
+            blocked_domains=[
+                "example.com",
+            ],
+        )
+
+
+def _cf_with_managed_feed(
+    config,
+    *,
+    enabled: bool,
+    url: str = "https://example.test/doh.txt",
+):
+    content_filter = (
+        config.content_filter.model_copy(
+            deep=True
+        )
+    )
+
+    doh = (
+        content_filter
+        .encrypted_dns
+        .doh
+        .model_copy(
+            update={
+                "managed_feed_enabled":
+                    enabled,
+                "managed_feed_url":
+                    url,
+            }
+        )
+    )
+
+    encrypted_dns = (
+        content_filter
+        .encrypted_dns
+        .model_copy(
+            update={
+                "doh": doh,
+            }
+        )
+    )
+
+    content_filter = (
+        content_filter.model_copy(
+            update={
+                "encrypted_dns":
+                    encrypted_dns,
+            }
+        )
+    )
+
+    return type(config).model_validate(
+        config.model_copy(
+            update={
+                "content_filter":
+                    content_filter,
+            }
+        ).model_dump(
+            mode="json"
+        )
+    )
+
+
+def test_content_filter_disable_feed_clears_state_and_timer(
+    monkeypatch,
+):
+    from datetime import UTC, datetime
+    from ipaddress import IPv4Address
+
+    from secbox.actions import (
+        content_filter as action,
+    )
+    from secbox.modules.content_filter.doh_feed.models import (
+        DohFeedState,
+    )
+
+    previous = _cf_with_managed_feed(
+        make_secbox_config(),
+        enabled=True,
+    )
+
+    candidate = _cf_with_managed_feed(
+        previous,
+        enabled=False,
+    )
+
+    class FakeConfigStore:
+        def __init__(self):
+            self.current = previous
+
+        def load(self):
+            return self.current
+
+        def save(self, value):
+            self.current = value
+
+    class FakeDohStore:
+        def __init__(self):
+            self.current = DohFeedState(
+                addresses=[
+                    IPv4Address(
+                        "9.9.9.9"
+                    ),
+                ],
+                updated_at=datetime.now(
+                    UTC
+                ),
+            )
+
+        def load(self):
+            return self.current
+
+        def save(self, value):
+            self.current = value
+
+    config_store = FakeConfigStore()
+    doh_store = FakeDohStore()
+    calls = []
+
+    monkeypatch.setattr(
+        action,
+        "DohFeedStore",
+        lambda: doh_store,
+    )
+
+    monkeypatch.setattr(
+        action,
+        "validate_content_filter_config",
+        lambda config: None,
+    )
+
+    monkeypatch.setattr(
+        action,
+        "_apply_dns",
+        lambda config: None,
+    )
+
+    monkeypatch.setattr(
+        action,
+        "_systemctl",
+        lambda operation, unit: calls.append(
+            (operation, unit)
+        ),
+    )
+
+    result = (
+        action.apply_content_filter_action(
+            candidate.content_filter,
+            store=config_store,
+        )
+    )
+
+    assert result.managed_feed_enabled is False
+    assert doh_store.current.addresses == []
+    assert doh_store.current.updated_at is None
+
+    assert (
+        "stop",
+        "secbox-doh-feed.service",
+    ) in calls
+
+    assert (
+        "stop",
+        "secbox-doh-feed.timer",
+    ) in calls
+
+    assert (
+        "disable",
+        "secbox-doh-feed.timer",
+    ) in calls
+
+    assert (
+        "restart",
+        "secbox-firewall.service",
+    ) in calls
+
+
+def test_content_filter_enable_feed_clears_stale_state_and_refreshes(
+    monkeypatch,
+):
+    from datetime import UTC, datetime
+    from ipaddress import IPv4Address
+
+    from secbox.actions import (
+        content_filter as action,
+    )
+    from secbox.modules.content_filter.doh_feed.models import (
+        DohFeedState,
+    )
+
+    previous = _cf_with_managed_feed(
+        make_secbox_config(),
+        enabled=False,
+    )
+
+    candidate = _cf_with_managed_feed(
+        previous,
+        enabled=True,
+    )
+
+    class FakeConfigStore:
+        def __init__(self):
+            self.current = previous
+
+        def load(self):
+            return self.current
+
+        def save(self, value):
+            self.current = value
+
+    class FakeDohStore:
+        def __init__(self):
+            self.current = DohFeedState(
+                addresses=[
+                    IPv4Address(
+                        "9.9.9.9"
+                    ),
+                ],
+                updated_at=datetime.now(
+                    UTC
+                ),
+            )
+
+        def load(self):
+            return self.current
+
+        def save(self, value):
+            self.current = value
+
+    config_store = FakeConfigStore()
+    doh_store = FakeDohStore()
+    calls = []
+
+    monkeypatch.setattr(
+        action,
+        "DohFeedStore",
+        lambda: doh_store,
+    )
+
+    monkeypatch.setattr(
+        action,
+        "validate_content_filter_config",
+        lambda config: None,
+    )
+
+    monkeypatch.setattr(
+        action,
+        "_apply_dns",
+        lambda config: None,
+    )
+
+    monkeypatch.setattr(
+        action,
+        "_systemctl",
+        lambda operation, unit: calls.append(
+            (operation, unit)
+        ),
+    )
+
+    result = (
+        action.apply_content_filter_action(
+            candidate.content_filter,
+            store=config_store,
+        )
+    )
+
+    assert result.managed_feed_enabled is True
+
+    # Stale state is removed before first fresh update.
+    assert doh_store.current.addresses == []
+
+    assert (
+        "enable",
+        "secbox-doh-feed.timer",
+    ) in calls
+
+    assert (
+        "start",
+        "secbox-doh-feed.timer",
+    ) in calls
+
+    assert (
+        "start",
+        "secbox-doh-feed.service",
+    ) in calls
+
+
+def test_content_filter_enable_failure_restores_config_state_and_timer(
+    monkeypatch,
+):
+    from datetime import UTC, datetime
+    from ipaddress import IPv4Address
+
+    from secbox.actions import (
+        content_filter as action,
+    )
+    from secbox.modules.content_filter.doh_feed.models import (
+        DohFeedState,
+    )
+
+    previous = _cf_with_managed_feed(
+        make_secbox_config(),
+        enabled=False,
+    )
+
+    candidate = _cf_with_managed_feed(
+        previous,
+        enabled=True,
+    )
+
+    original_state = DohFeedState(
+        addresses=[
+            IPv4Address(
+                "9.9.9.9"
+            ),
+        ],
+        updated_at=datetime.now(
+            UTC
+        ),
+    )
+
+    class FakeConfigStore:
+        def __init__(self):
+            self.current = previous
+
+        def load(self):
+            return self.current
+
+        def save(self, value):
+            self.current = value
+
+    class FakeDohStore:
+        def __init__(self):
+            self.current = original_state
+
+        def load(self):
+            return self.current
+
+        def save(self, value):
+            self.current = value
+
+    config_store = FakeConfigStore()
+    doh_store = FakeDohStore()
+    calls = []
+
+    monkeypatch.setattr(
+        action,
+        "DohFeedStore",
+        lambda: doh_store,
+    )
+
+    monkeypatch.setattr(
+        action,
+        "validate_content_filter_config",
+        lambda config: None,
+    )
+
+    monkeypatch.setattr(
+        action,
+        "_apply_dns",
+        lambda config: None,
+    )
+
+    failed = False
+
+    def fake_systemctl(
+        operation,
+        unit,
+    ):
+        nonlocal failed
+
+        calls.append(
+            (operation, unit)
+        )
+
+        if (
+            not failed
+            and operation == "start"
+            and unit
+            == "secbox-doh-feed.service"
+        ):
+            failed = True
+
+            raise action.ContentFilterActionError(
+                "simulated feed refresh failure"
+            )
+
+    monkeypatch.setattr(
+        action,
+        "_systemctl",
+        fake_systemctl,
+    )
+
+    with pytest.raises(
+        action.ContentFilterActionError,
+        match="simulated feed refresh failure",
+    ):
+        action.apply_content_filter_action(
+            candidate.content_filter,
+            store=config_store,
+        )
+
+    assert (
+        config_store
+        .current
+        .content_filter
+        .encrypted_dns
+        .doh
+        .managed_feed_enabled
+        is False
+    )
+
+    assert (
+        doh_store.current
+        == original_state
+    )
+
+    # Previous lifecycle was disabled, so rollback
+    # must leave both service and timer stopped.
+    assert (
+        "disable",
+        "secbox-doh-feed.timer",
+    ) in calls

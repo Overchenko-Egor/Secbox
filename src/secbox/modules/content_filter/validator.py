@@ -25,16 +25,6 @@ def validate_content_filter_config(
             "enabled content filter requires enabled firewall"
         )
 
-    if content_filter.policy.default_action != "allow":
-        raise ContentFilterValidationError(
-            "default_action='block' is not supported yet"
-        )
-
-    if content_filter.policy.allowed_domains:
-        raise ContentFilterValidationError(
-            "allowed_domains is not supported yet"
-        )
-
     interface_name = (
         content_filter.dns.listen_interface
     )

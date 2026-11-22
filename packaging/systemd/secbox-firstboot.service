@@ -1,0 +1,16 @@
+[Unit]
+Description=SecBox first boot initialization
+After=local-fs.target
+Before=nginx.service
+Before=secbox-web.service
+Before=secbox-firewall.service
+Before=secbox-vpn.service
+Before=secbox-ids.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/lib/secbox/secbox-firstboot
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target
